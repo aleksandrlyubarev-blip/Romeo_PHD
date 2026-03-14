@@ -1,0 +1,490 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: Romeo PHD 6.0 - Agent Development Platform API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: pipeline
+    description: Pipeline orchestration operations
+  - name: telemetry
+    description: AI telemetry and logging
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /pipelines:
+    get:
+      operationId: listPipelines
+      tags: [pipeline]
+      summary: List all pipelines
+      responses:
+        "200":
+          description: List of pipelines
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pipeline"
+    post:
+      operationId: createPipeline
+      tags: [pipeline]
+      summary: Create and start a new pipeline
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePipelineBody"
+      responses:
+        "201":
+          description: Created pipeline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pipeline"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /pipelines/{id}:
+    get:
+      operationId: getPipeline
+      tags: [pipeline]
+      summary: Get pipeline with all nodes and statuses
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Pipeline with nodes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineWithNodes"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deletePipeline
+      tags: [pipeline]
+      summary: Delete a pipeline
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /pipelines/{id}/resume:
+    post:
+      operationId: resumePipeline
+      tags: [pipeline]
+      summary: Resume pipeline after HITL review
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResumePipelineBody"
+      responses:
+        "200":
+          description: Pipeline resumed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pipeline"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /pipelines/{id}/execute:
+    post:
+      operationId: executePipeline
+      tags: [pipeline]
+      summary: Start executing the pipeline nodes via SSE
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: SSE stream of execution events
+          content:
+            text/event-stream: {}
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /pipelines/{id}/nodes:
+    get:
+      operationId: listPipelineNodes
+      tags: [pipeline]
+      summary: Get all nodes for a pipeline
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of nodes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PipelineNode"
+
+  /pipelines/{id}/consultations:
+    get:
+      operationId: listConsultations
+      tags: [pipeline]
+      summary: Get pending consultations for a pipeline
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of consultations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Consultation"
+
+  /consultations/{approvalId}/respond:
+    post:
+      operationId: respondToConsultation
+      tags: [pipeline]
+      summary: Respond to a HITL consultation request
+      parameters:
+        - name: approvalId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsultationResponseBody"
+      responses:
+        "200":
+          description: Response recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Consultation"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /telemetry:
+    get:
+      operationId: listTelemetryEvents
+      tags: [telemetry]
+      summary: List recent telemetry events
+      parameters:
+        - name: pipelineId
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Telemetry events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TelemetryEvent"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    Pipeline:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        yamlContent:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, paused, completed, failed]
+        nodeCount:
+          type: integer
+        resolvedCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - yamlContent
+        - status
+        - nodeCount
+        - resolvedCount
+        - createdAt
+        - updatedAt
+
+    PipelineNode:
+      type: object
+      properties:
+        id:
+          type: integer
+        pipelineId:
+          type: integer
+        nodeId:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        prompt:
+          type: ["string", "null"]
+        dependencies:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [PENDING, RESOLVED, NEEDS_CLARIFICATION, AMBIGUOUS]
+        output:
+          type: ["string", "null"]
+        confidenceScore:
+          type: ["number", "null"]
+        positionX:
+          type: number
+        positionY:
+          type: number
+        executedAt:
+          type: ["string", "null"]
+          format: date-time
+      required:
+        - id
+        - pipelineId
+        - nodeId
+        - name
+        - type
+        - dependencies
+        - status
+        - positionX
+        - positionY
+
+    PipelineWithNodes:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        yamlContent:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, paused, completed, failed]
+        nodeCount:
+          type: integer
+        resolvedCount:
+          type: integer
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/PipelineNode"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - yamlContent
+        - status
+        - nodeCount
+        - resolvedCount
+        - nodes
+        - createdAt
+        - updatedAt
+
+    Consultation:
+      type: object
+      properties:
+        id:
+          type: integer
+        pipelineId:
+          type: integer
+        nodeId:
+          type: string
+        approvalId:
+          type: string
+        functionName:
+          type: string
+        arguments:
+          type: object
+        message:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, APPROVED, REJECTED]
+        feedback:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - pipelineId
+        - nodeId
+        - approvalId
+        - functionName
+        - arguments
+        - message
+        - status
+        - createdAt
+
+    TelemetryEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+        pipelineId:
+          type: ["integer", "null"]
+        nodeId:
+          type: ["string", "null"]
+        eventType:
+          type: string
+        payload:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - eventType
+        - payload
+        - createdAt
+
+    CreatePipelineBody:
+      type: object
+      properties:
+        name:
+          type: string
+        yamlContent:
+          type: string
+      required:
+        - name
+        - yamlContent
+
+    ResumePipelineBody:
+      type: object
+      properties:
+        nodeId:
+          type: string
+        decision:
+          type: string
+          enum: [approve, reject]
+        feedback:
+          type: ["string", "null"]
+      required:
+        - nodeId
+        - decision
+
+    ConsultationResponseBody:
+      type: object
+      properties:
+        decision:
+          type: string
+          enum: [approve, reject]
+        feedback:
+          type: ["string", "null"]
+      required:
+        - decision
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error

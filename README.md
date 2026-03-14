@@ -1,62 +1,88 @@
-# RomeoPHD v6.0
+# RomeoPHD v6.0 — GitHub Codespaces
 
-Платформа агентной разработки с Human-in-the-Loop оркестрацией.
+## Запуск за 3 шага
+
+### Шаг 1 — Добавить API-ключ в GitHub Secrets
+
+Перед созданием Codespace добавьте ключ один раз (он сохранится для всех ваших codespaces):
+
+1. **github.com** → ваш аватар → **Settings**
+2. **Codespaces** → **Secrets** → **New secret**
+3. Name: `ANTHROPIC_API_KEY`  
+   Value: ваш ключ с [console.anthropic.com](https://console.anthropic.com)
+4. В поле **Repository access** → выберите этот репозиторий → **Add secret**
+
+### Шаг 2 — Открыть Codespace
+
+1. На странице репозитория → зелёная кнопка **Code**
+2. Вкладка **Codespaces** → **Create codespace on main**
+3. Подождать ~3 минуты пока запустится setup (прогресс виден в терминале)
+
+### Шаг 3 — Запустить проект
+
+После того как setup завершится, в терминале Codespace:
+
+```bash
+pnpm run dev
+```
+
+Codespaces автоматически откроет браузер с фронтендом на порту **5173**.  
+API работает на порту **3001**.
+
+---
 
 ## Структура проекта
 
 ```
-romeophi_v6/
-├── src/
-│   ├── compiler/
-│   │   ├── llm_worker.py        # LLM-адаптер с безопасной AST-инъекцией
-│   │   └── human_loop.py        # HITL-оркестратор на LangGraph
-│   ├── devops/
-│   │   ├── ai_telemetry.py      # Логгер цепочек рассуждений агентов
-│   │   └── terraform_main.tf    # IaC для локального K8s (Kind)
-│   └── web_ui/
-│       └── src/app/page.tsx     # Next.js IDE: Monaco + React Flow
-├── tests/
-│   ├── test_parser.py           # Тесты парсера + алгоритм Кана
-│   └── test_solver.py           # Тесты ConstraintPropagator
-├── .github/workflows/
-│   └── intent_pipeline.yml      # CI/CD с Self-Healing
-├── Dockerfile                   # Multi-stage Python backend
-├── docker-compose.yml           # Полный стек: compiler + web_ui + postgres
-└── requirements.txt
+Romeo-Agent-System/
+├── artifacts/
+│   ├── api-server/          # Express 5 API (порт 3001)
+│   │   └── src/
+│   │       ├── lib/pipeline-parser.ts   # Kahn's Algorithm + YAML parser
+│   │       ├── lib/pipeline-executor.ts # LLM workers + HITL
+│   │       └── routes/pipeline/         # REST endpoints
+│   └── romeo-phd/           # React + Vite UI (порт 5173)
+│       └── src/pages/
+│           ├── ide.tsx          # Monaco Editor + React Flow
+│           ├── consultations.tsx # HITL approval queue
+│           ├── telemetry.tsx    # Live agent logs
+│           └── dashboard.tsx    # Mission Control
+├── lib/
+│   ├── db/                  # Drizzle ORM + PostgreSQL schema
+│   ├── api-zod/             # Zod schemas (auto-generated)
+│   ├── api-client-react/    # React Query hooks (auto-generated)
+│   └── api-spec/            # OpenAPI 3.1 spec
+└── .devcontainer/
+    ├── devcontainer.json    # Codespace конфигурация
+    ├── setup.sh             # Авто-установка PostgreSQL + deps
+    └── patch.mjs            # Исправление критических багов
 ```
 
-## Быстрый старт
+## API endpoints
+
+| Метод | URL | Описание |
+|-------|-----|----------|
+| GET | `/api/healthz` | Health check |
+| GET | `/api/pipelines` | Список пайплайнов |
+| POST | `/api/pipelines` | Создать пайплайн из YAML |
+| GET | `/api/pipelines/:id` | Пайплайн + узлы |
+| POST | `/api/pipelines/:id/execute` | Запустить (SSE) |
+| POST | `/api/pipelines/:id/resume` | Возобновить после HITL-паузы |
+| POST | `/api/consultations/:id/respond` | Ответ оператора |
+| GET | `/api/telemetry` | Логи телеметрии |
+
+## Если что-то пошло не так
 
 ```bash
-# 1. Установить зависимости Python
-pip install -r requirements.txt
+# Перезапустить PostgreSQL
+sudo service postgresql start
 
-# 2. Запустить тесты
-pytest tests/ -v
+# Сбросить и пересоздать БД
+pnpm --filter @workspace/db run push --accept-data-loss
 
-# 3. Запустить полный стек
-cp .env.example .env  # добавить OPENROUTER_API_KEY
-docker compose up --build
+# Проверить типы
+pnpm run typecheck
 
-# Фронтенд: http://localhost:3000
-# Compiler API: http://localhost:8000
+# Посмотреть логи API
+pnpm --filter @workspace/api-server run dev
 ```
-
-## Переменные окружения
-
-| Переменная         | Описание                        |
-|--------------------|---------------------------------|
-| OPENROUTER_API_KEY | API-ключ для LLM Worker         |
-| DATABASE_URL       | PostgreSQL для LangGraph HITL   |
-| LOG_LEVEL          | Уровень логирования (INFO/DEBUG)|
-
-## TODO для MVP
-
-- [ ] `src/compiler/api.py` — FastAPI шлюз (/start, /get_state, /resume)
-- [ ] `src/compiler/executor.py` — точка входа для self-healing CI
-- [ ] `src/compiler/parser.py` — реальный парсер YAML → граф
-- [ ] `src/compiler/solver.py` — реальный ConstraintPropagator
-- [ ] `src/web_ui/src/app/Dockerfile` — образ для Next.js
-- [ ] WebSocket для live-обновлений статусов узлов React Flow
-- [ ] PostgresSaver вместо MemorySaver в human_loop.py
-

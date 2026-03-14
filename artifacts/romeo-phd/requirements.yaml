@@ -1,0 +1,21 @@
+packages:
+  "framer-motion": "For page transitions and high-tech dashboard animations"
+  "recharts": "For dashboard analytics charts and statistics"
+  "date-fns": "For human-readable date formatting in chat and lists"
+  "clsx": "For conditional class name merging"
+  "tailwind-merge": "For merging tailwind classes safely"
+  "lucide-react": "For consistent, beautiful icons"
+  "react-hook-form": "For form state management"
+  "@hookform/resolvers": "For zod validation in forms"
+  "zod": "For schema validation"
+
+images:
+  - path: "artifacts/romeo-phd/public/images/dashboard-bg.png"
+    description: "Dark, abstract, high-tech command center background with subtle glowing cyan and purple neon grid lines, very minimalist and professional"
+    aspect_ratio: "16:9"
+
+notes:
+  - "Using Wouter for routing"
+  - "React Query hooks imported from @workspace/api-client-react"
+  - "SSE streaming implemented manually with fetch + ReadableStream, avoiding generated hooks for the SSE endpoint"
+  - "Tailwind v4 CSS variables configured for a dark mode professional aesthetic"
