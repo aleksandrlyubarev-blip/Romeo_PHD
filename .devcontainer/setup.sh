@@ -8,8 +8,13 @@ echo "════════════════════════�
 echo ""
 
 # ─── 1. PostgreSQL ───────────────────────────────────────────
-echo "▶ Starting PostgreSQL..."
+
+echo "▶ Installing PostgreSQL..."
+sudo apt-get update -qq
+sudo apt-get install -y postgresql postgresql-contrib
 sudo service postgresql start
+
+echo "▶ Starting PostgreSQL..."
 
 echo "▶ Creating database user and schema..."
 sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='romeo'" \
