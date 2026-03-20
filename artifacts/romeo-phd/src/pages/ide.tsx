@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useLocation, useParams } from "wouter";
 import Editor from "@monaco-editor/react";
-import { ReactFlow, Background, Controls, MiniMap, useNodesState, useEdgesState, MarkerType, Handle, Position } from "@xyflow/react";
+import { ReactFlow, Background, Controls, MiniMap, useNodesState, useEdgesState, MarkerType, Handle, Position, type Edge, type Node } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useCreatePipeline, useGetPipeline, useExecutePipeline } from "@workspace/api-client-react";
+import { useCreatePipeline, useGetPipeline, useExecutePipeline, type PipelineNode } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Play, RotateCcw, Activity, SquareTerminal, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -82,6 +82,17 @@ const CustomNode = ({ data }: { data: any }) => {
   );
 };
 
+type PipelineFlowNodeData = {
+  name: string;
+  type: string;
+  status: PipelineNode["status"];
+  confidenceScore: PipelineNode["confidenceScore"];
+  originalNode: PipelineNode;
+};
+
+type PipelineFlowNode = Node<PipelineFlowNodeData, "custom">;
+type PipelineFlowEdge = Edge;
+
 const nodeTypes = {
   custom: CustomNode,
 };
@@ -92,16 +103,12 @@ export default function IDE() {
   const pipelineId = params.pipelineId ? parseInt(params.pipelineId) : null;
   
   const [yamlContent, setYamlContent] = useState(DEFAULT_YAML);
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<PipelineFlowNode>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<PipelineFlowEdge>([]);
   const [isRunning, setIsRunning] = useState(false);
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const { data: pipeline, refetch: refetchPipeline } = useGetPipeline(pipelineId as number, {
-    query: {
-      enabled: !!pipelineId,
-    }
-  });
+  const { data: pipeline, refetch: refetchPipeline } = useGetPipeline(pipelineId ?? 0);
 
   const createPipelineMutation = useCreatePipeline();
   const executePipelineMutation = useExecutePipeline();
@@ -114,9 +121,9 @@ export default function IDE() {
       }
       
       if (pipeline.nodes && pipeline.nodes.length > 0) {
-        const flowNodes = pipeline.nodes.map(n => ({
+        const flowNodes: PipelineFlowNode[] = pipeline.nodes.map((n) => ({
           id: n.nodeId,
-          type: 'custom',
+          type: "custom",
           position: { x: n.positionX, y: n.positionY },
           data: {
             name: n.name,
@@ -127,7 +134,7 @@ export default function IDE() {
           }
         }));
         
-        const flowEdges: any[] = [];
+        const flowEdges: PipelineFlowEdge[] = [];
         pipeline.nodes.forEach(n => {
           if (n.dependencies && n.dependencies.length > 0) {
             n.dependencies.forEach(depId => {
