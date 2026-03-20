@@ -1,11 +1,14 @@
-import { useListTelemetryEvents } from "@workspace/api-client-react";
+import { getListTelemetryEventsQueryKey, useListTelemetryEvents } from "@workspace/api-client-react";
 import { Activity, TerminalSquare } from "lucide-react";
 
 export default function Telemetry() {
-  const { data: events, isLoading } = useListTelemetryEvents(
-    { limit: 100 },
-    { query: { refetchInterval: 5000 } }
-  );
+  const params = { limit: 100 } as const;
+  const { data: events, isLoading } = useListTelemetryEvents(params, {
+    query: {
+      queryKey: getListTelemetryEventsQueryKey(params),
+      refetchInterval: 5000,
+    },
+  });
 
   return (
     <div className="p-8 max-w-7xl mx-auto w-full h-full flex flex-col">

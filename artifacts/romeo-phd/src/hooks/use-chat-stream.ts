@@ -1,7 +1,16 @@
 import { useState, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getListAnthropicMessagesQueryKey } from "@workspace/api-client-react";
-import type { AnthropicMessage } from "@workspace/api-client-react";
+
+interface AnthropicMessage {
+  id: number;
+  conversationId: number;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+}
+
+const getListAnthropicMessagesQueryKey = (conversationId: number | null) =>
+  ["/api/anthropic/conversations", conversationId, "messages"] as const;
 
 export function useChatStream(conversationId: number | null) {
   const queryClient = useQueryClient();
@@ -67,9 +76,9 @@ export function useChatStream(conversationId: number | null) {
           if (line.startsWith("data: ")) {
             const dataStr = line.slice(6);
             if (dataStr === "[DONE]") continue;
-            
+
             try {
-              const data = JSON.parse(dataStr);
+              const data = JSON.parse(dataStr) as { done?: boolean; content?: string };
               if (data.done) {
                 break;
               }
@@ -98,7 +107,7 @@ export function useChatStream(conversationId: number | null) {
       queryClient.invalidateQueries({
         queryKey: getListAnthropicMessagesQueryKey(conversationId),
       });
-      setOptimisticMessages([]); // Clear optimistic state to let React Query take over
+      setOptimisticMessages([]);
     }
   }, [conversationId, queryClient]);
 
