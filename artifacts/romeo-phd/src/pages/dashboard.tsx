@@ -2,6 +2,7 @@ import { useListPipelines } from "@workspace/api-client-react";
 import { motion } from "framer-motion";
 import { Activity, Cpu, Network, GitBranch, ArrowUpRight, Plus, Play } from "lucide-react";
 import { Card } from "@/components/ui";
+import { BUXTER_ACTIVE_PHASES, BUXTER_AGENT_LANES, BUXTER_DELIVERY_SPRINTS, BUXTER_RUNTIME_GUARDS, BUXTER_SPRINT_ONE_GOALS, BUXTER_TEMPLATES } from "@/lib/buxter";
 import { Link } from "wouter";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -101,7 +102,160 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-6">
+          <Card className="p-6 border-primary/20 bg-gradient-to-br from-primary/10 via-background to-background">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+              <div className="max-w-3xl space-y-3">
+                <div className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-mono text-primary">
+                  BUXTER / autonomous CAD MAS
+                </div>
+                <div>
+                  <h2 className="text-2xl font-display font-semibold">Buxter — сквозное CAD-проектирование</h2>
+                  <p className="mt-2 text-sm text-muted-foreground font-mono leading-6">
+                    Архитектурный blueprint для мультиагентной системы, которая проводит изделие через
+                    параметрическое 3D-моделирование, 2D-документацию, интероперабельность DWG и GUI-автоматизацию SolidWorks.
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-3 text-sm font-mono text-muted-foreground lg:min-w-[280px]">
+                <div className="rounded-xl border border-border/60 bg-background/70 p-4">
+                  <div className="mb-1 text-xs uppercase tracking-[0.2em] text-primary">Callsign</div>
+                  <div className="text-base font-semibold text-foreground">buxter</div>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-background/70 p-4">
+                  <div className="mb-1 text-xs uppercase tracking-[0.2em] text-primary">Target flow</div>
+                  <div className="text-base font-semibold text-foreground">Sprint 1 → Foundation / Sprint 2 → CAD execution / Sprint 3 → Guarded automation</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-4 xl:grid-cols-3">
+              {BUXTER_AGENT_LANES.map((lane) => (
+                <div key={lane.title} className="rounded-xl border border-border/60 bg-background/60 p-4">
+                  <div className="text-xs uppercase tracking-[0.24em] text-primary font-mono">{lane.title}</div>
+                  <div className="mt-3 space-y-2">
+                    {lane.agents.map((agent) => (
+                      <div key={agent} className="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm font-medium text-foreground">
+                        {agent}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-xs leading-5 text-muted-foreground font-mono">{lane.detail}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 rounded-xl border border-border/60 bg-background/60 p-4">
+              <div className="text-xs uppercase tracking-[0.24em] text-primary font-mono">Runtime guards</div>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                {BUXTER_RUNTIME_GUARDS.map((guard) => (
+                  <div key={guard} className="rounded-lg border border-border/60 bg-background/70 px-3 py-3 text-xs leading-5 text-muted-foreground font-mono">
+                    {guard}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6 border-primary/20">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-display font-semibold">Sprint 1 Review</h2>
+                <p className="mt-1 text-xs font-mono text-muted-foreground">Foundation phase закрыта; её handoff теперь служит входом для активного Sprint 2.</p>
+              </div>
+              <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-primary font-mono">
+                {BUXTER_TEMPLATES[0].status}
+              </span>
+            </div>
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              {BUXTER_SPRINT_ONE_GOALS.map((goal) => (
+                <div key={goal} className="rounded-xl border border-border/60 bg-background/60 p-4 text-xs leading-5 font-mono text-muted-foreground">
+                  {goal}
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card className="p-6 border-primary/20">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-display font-semibold">Sprint 2 Review</h2>
+                <p className="mt-1 text-xs font-mono text-muted-foreground">Execution layer закрыт; его package теперь служит входом для активного Sprint 3 automation stage.</p>
+              </div>
+              <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-primary font-mono">
+                {BUXTER_TEMPLATES[1].status}
+              </span>
+            </div>
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              {BUXTER_TEMPLATES[1].deliverables.map((deliverable) => (
+                <div key={deliverable} className="rounded-xl border border-border/60 bg-background/60 p-4 text-xs leading-5 font-mono text-muted-foreground">
+                  {deliverable}
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 grid gap-3 lg:grid-cols-2">
+              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                <div className="text-[10px] uppercase tracking-[0.2em] text-primary font-mono">Tooling</div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {BUXTER_TEMPLATES[1].tooling.map((tool) => (
+                    <span key={tool} className="rounded-full border border-border/60 bg-background/70 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-mono">
+                      {tool}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                <div className="text-[10px] uppercase tracking-[0.2em] text-primary font-mono">Execution gates</div>
+                <div className="mt-3 space-y-2">
+                  {BUXTER_TEMPLATES[1].qualityGates.map((gate) => (
+                    <div key={gate} className="text-xs leading-5 font-mono text-muted-foreground">• {gate}</div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <p className="mt-5 text-xs leading-5 font-mono text-muted-foreground">Handoff: {BUXTER_TEMPLATES[1].handoff}</p>
+          </Card>
+
+          <Card className="p-6 border-primary/20">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-display font-semibold">Sprint 3 Scope</h2>
+                <p className="mt-1 text-xs font-mono text-muted-foreground">Активный инженерный инкремент: guarded automation layer before full MAS rollout.</p>
+              </div>
+              <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-primary font-mono">
+                {BUXTER_TEMPLATES[2].badge}
+              </span>
+            </div>
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              {BUXTER_TEMPLATES[2].deliverables.map((deliverable) => (
+                <div key={deliverable} className="rounded-xl border border-border/60 bg-background/60 p-4 text-xs leading-5 font-mono text-muted-foreground">
+                  {deliverable}
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 grid gap-3 lg:grid-cols-2">
+              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                <div className="text-[10px] uppercase tracking-[0.2em] text-primary font-mono">Tooling</div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {BUXTER_TEMPLATES[2].tooling.map((tool) => (
+                    <span key={tool} className="rounded-full border border-border/60 bg-background/70 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-mono">
+                      {tool}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                <div className="text-[10px] uppercase tracking-[0.2em] text-primary font-mono">Automation gates</div>
+                <div className="mt-3 space-y-2">
+                  {BUXTER_TEMPLATES[2].qualityGates.map((gate) => (
+                    <div key={gate} className="text-xs leading-5 font-mono text-muted-foreground">• {gate}</div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <p className="mt-5 text-xs leading-5 font-mono text-muted-foreground">Handoff: {BUXTER_TEMPLATES[2].handoff}</p>
+          </Card>
+
           <Card className="p-6">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-display font-semibold">Pipeline Registry</h2>
@@ -154,33 +308,66 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        <Card className="p-6 relative overflow-hidden">
-          <div className="absolute inset-0 bg-[url('/images/dashboard-bg.png')] bg-cover bg-center opacity-10 mix-blend-screen pointer-events-none" />
-          <div className="relative z-10">
-            <h2 className="text-xl font-display font-semibold mb-6">Quick Actions</h2>
-            <div className="space-y-3">
-              {[
-                { label: "Open IDE", desc: "Define a new pipeline in YAML", href: "/ide", icon: "⚡" },
-                { label: "HITL Review", desc: "Respond to pending consultations", href: "/consultations", icon: "👁" },
-                { label: "Telemetry", desc: "View AI chain-of-reasoning logs", href: "/telemetry", icon: "📡" },
-              ].map((action) => (
-                <Link key={action.href} href={action.href}>
-                  <div className="p-4 rounded-lg bg-background/50 backdrop-blur-md border border-border/50 hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer group">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xl">{action.icon}</span>
-                      <div>
-                        <p className="font-semibold text-sm group-hover:text-primary transition-colors">
-                          {action.label}
-                        </p>
-                        <p className="text-xs text-muted-foreground font-mono">{action.desc}</p>
-                      </div>
-                    </div>
+        <div className="space-y-6">
+          <Card className="p-6">
+            <h2 className="text-xl font-display font-semibold">Buxter delivery by sprints</h2>
+            <p className="mt-2 text-xs font-mono text-muted-foreground leading-5">
+              Да — разработка разбита по спринтам: сначала foundation, потом executable CAD, затем GUI automation и production review loops.
+            </p>
+            <div className="mt-5 space-y-3">
+              {BUXTER_DELIVERY_SPRINTS.map((sprint) => (
+                <div key={sprint.id} className="rounded-xl border border-border/60 bg-background/60 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-semibold text-sm text-foreground">{sprint.title}</div>
+                    <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-primary font-mono">
+                      {sprint.status}
+                    </span>
                   </div>
-                </Link>
+                  <p className="mt-2 text-xs font-mono leading-5 text-muted-foreground">{sprint.scope}</p>
+                </div>
               ))}
             </div>
-          </div>
-        </Card>
+            <div className="mt-5 rounded-xl border border-border/60 bg-background/60 p-4">
+              <div className="text-[10px] uppercase tracking-[0.2em] text-primary font-mono">Active sprint phases</div>
+              <div className="mt-3 space-y-2">
+                {BUXTER_ACTIVE_PHASES.map((phase) => (
+                  <div key={phase.title} className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/70 px-3 py-2">
+                    <span className="text-xs font-semibold text-foreground">{phase.title}</span>
+                    <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-mono">{phase.owner}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6 relative overflow-hidden">
+            <div className="absolute inset-0 bg-[url('/images/dashboard-bg.png')] bg-cover bg-center opacity-10 mix-blend-screen pointer-events-none" />
+            <div className="relative z-10">
+              <h2 className="text-xl font-display font-semibold mb-6">Quick Actions</h2>
+              <div className="space-y-3">
+                {[
+                  { label: "Open IDE", desc: "Load and edit the active Buxter sprint workflow", href: "/ide", icon: "⚡" },
+                  { label: "HITL Review", desc: "Respond to pending consultations", href: "/consultations", icon: "👁" },
+                  { label: "Telemetry", desc: "View AI chain-of-reasoning logs", href: "/telemetry", icon: "📡" },
+                ].map((action) => (
+                  <Link key={action.href} href={action.href}>
+                    <div className="p-4 rounded-lg bg-background/50 backdrop-blur-md border border-border/50 hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer group">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl">{action.icon}</span>
+                        <div>
+                          <p className="font-semibold text-sm group-hover:text-primary transition-colors">
+                            {action.label}
+                          </p>
+                          <p className="text-xs text-muted-foreground font-mono">{action.desc}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </Card>
+        </div>
       </div>
     </div>
   );
