@@ -7,39 +7,7 @@ import { useCreatePipeline, useGetPipeline, useExecutePipeline, type PipelineNod
 import { Button } from "@/components/ui/button";
 import { Play, RotateCcw, Activity, SquareTerminal, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-
-const DEFAULT_YAML = `name: Data Processing Pipeline
-description: Extract, transform, validate and output data
-
-nodes:
-  - id: extract_data
-    name: Extract Data
-    type: data_extraction
-    prompt: "Extract and identify key data points from the provided context. Return structured JSON with field names and values."
-
-  - id: validate_schema
-    name: Validate Schema
-    type: validation
-    depends_on: [extract_data]
-    prompt: "Validate the extracted data against expected schema requirements. Check for completeness, type correctness, and business rules."
-
-  - id: transform_data
-    name: Transform Data
-    type: transformation
-    depends_on: [validate_schema]
-    prompt: "Transform the validated data into the target output format. Apply normalization, enrichment, and formatting rules."
-
-  - id: quality_check
-    name: Quality Check
-    type: analysis
-    depends_on: [transform_data]
-    prompt: "Perform final quality assessment. Score data completeness, accuracy, and confidence level."
-
-  - id: generate_output
-    name: Generate Output
-    type: output
-    depends_on: [quality_check]
-    prompt: "Compile final output report with all processed data and quality metrics."`;
+import { BUXTER_DEFAULT_TEMPLATE, BUXTER_DELIVERY_SPRINTS, BUXTER_TEMPLATES, detectBuxterTemplateId, getBuxterTemplate } from "@/lib/buxter";
 
 // Custom node component matching status
 const CustomNode = ({ data }: { data: any }) => {
@@ -102,7 +70,9 @@ export default function IDE() {
   const [, setLocation] = useLocation();
   const pipelineId = params.pipelineId ? parseInt(params.pipelineId) : null;
   
-  const [yamlContent, setYamlContent] = useState(DEFAULT_YAML);
+  const [activeTemplateId, setActiveTemplateId] = useState(BUXTER_DEFAULT_TEMPLATE.id);
+  const activeTemplate = getBuxterTemplate(activeTemplateId);
+  const [yamlContent, setYamlContent] = useState(BUXTER_DEFAULT_TEMPLATE.yaml);
   const [nodes, setNodes, onNodesChange] = useNodesState<PipelineFlowNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<PipelineFlowEdge>([]);
   const [isRunning, setIsRunning] = useState(false);
@@ -118,6 +88,11 @@ export default function IDE() {
     if (pipeline) {
       if (!yamlContent || pipeline.yamlContent !== yamlContent) {
         setYamlContent(pipeline.yamlContent);
+      }
+
+      const detectedTemplateId = detectBuxterTemplateId(pipeline.yamlContent);
+      if (detectedTemplateId && detectedTemplateId !== activeTemplateId) {
+        setActiveTemplateId(detectedTemplateId);
       }
       
       if (pipeline.nodes && pipeline.nodes.length > 0) {
@@ -160,7 +135,7 @@ export default function IDE() {
         }
       }
     }
-  }, [pipeline]);
+  }, [activeTemplateId, pipeline, yamlContent]);
 
   // Polling when running
   useEffect(() => {
@@ -205,7 +180,8 @@ export default function IDE() {
   };
 
   const handleReset = () => {
-    setYamlContent(DEFAULT_YAML);
+    setActiveTemplateId(BUXTER_DEFAULT_TEMPLATE.id);
+    setYamlContent(BUXTER_DEFAULT_TEMPLATE.yaml);
     setNodes([]);
     setEdges([]);
     setLocation('/ide');
@@ -214,11 +190,11 @@ export default function IDE() {
   return (
     <div className="flex flex-col h-[calc(100vh-2rem)] rounded-xl border border-border overflow-hidden bg-background/80 backdrop-blur-sm shadow-2xl mx-4 my-4">
       {/* Top Bar */}
-      <div className="h-14 border-b border-border bg-card/50 flex items-center justify-between px-4">
-        <div className="flex items-center space-x-3">
+      <div className="min-h-14 border-b border-border bg-card/50 flex items-center justify-between px-4 py-3 gap-4">
+        <div className="flex items-center space-x-3 min-w-0">
           <SquareTerminal className="w-5 h-5 text-primary" />
           <span className="font-display font-semibold">
-            {pipeline ? pipeline.name : "New Pipeline"}
+            {pipeline ? pipeline.name : activeTemplate.name}
           </span>
           {pipeline && (
             <Badge variant="outline" className={`font-mono text-xs ml-2 ${
@@ -231,14 +207,100 @@ export default function IDE() {
             </Badge>
           )}
         </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {BUXTER_TEMPLATES.map((template) => (
+              <Button
+                key={template.id}
+                variant={activeTemplateId === template.id ? "default" : "secondary"}
+                className="font-mono text-[11px]"
+                onClick={() => {
+                  setActiveTemplateId(template.id);
+                  setYamlContent(template.yaml);
+                }}
+              >
+                {template.badge}
+              </Button>
+            ))}
+            <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-[0.2em]">Sprint-driven CAD</Badge>
+          </div>
+        </div>
       </div>
 
       {/* Split Screen Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel: Monaco Editor */}
         <div className="w-[40%] border-r border-border h-full flex flex-col">
-          <div className="h-10 bg-secondary/30 border-b border-border/50 flex items-center px-4">
-            <span className="text-xs font-mono text-muted-foreground">pipeline.yaml</span>
+          <div className="border-b border-border/50 bg-secondary/30 px-4 py-3 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-mono text-muted-foreground">pipeline.yaml</span>
+              <span className="text-[10px] uppercase tracking-[0.2em] text-primary font-mono">{activeTemplate.badge} preset</span>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-background/60 px-3 py-3">
+              <div className="text-xs font-semibold text-foreground">{activeTemplate.name}</div>
+              <p className="mt-1 text-[11px] leading-5 text-muted-foreground font-mono">{activeTemplate.summary}</p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-primary font-mono">
+                  {activeTemplate.sprint}
+                </span>
+                <span className="rounded-full border border-border/60 bg-background/70 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-mono">
+                  {activeTemplate.status}
+                </span>
+              </div>
+              <p className="mt-3 text-[11px] leading-5 text-muted-foreground font-mono">Next focus: {activeTemplate.nextFocus}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {activeTemplate.deliverables.map((deliverable) => (
+                  <span key={deliverable} className="rounded-full border border-border/60 bg-background/70 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-mono">
+                    {deliverable}
+                  </span>
+                ))}
+              </div>
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                <div className="rounded-lg border border-border/60 bg-background/70 px-3 py-3">
+                  <div className="text-[10px] uppercase tracking-[0.2em] text-primary font-mono">Tooling</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {activeTemplate.tooling.map((tool) => (
+                      <span key={tool} className="rounded-full border border-border/60 bg-background px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-mono">
+                        {tool}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border/60 bg-background/70 px-3 py-3">
+                  <div className="text-[10px] uppercase tracking-[0.2em] text-primary font-mono">Quality gates</div>
+                  <div className="mt-2 space-y-2">
+                    {activeTemplate.qualityGates.map((gate) => (
+                      <div key={gate} className="text-[11px] leading-5 text-muted-foreground font-mono">• {gate}</div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <p className="mt-4 text-[11px] leading-5 text-muted-foreground font-mono">Handoff: {activeTemplate.handoff}</p>
+            </div>
+            <div className="space-y-3">
+              <div className="text-[10px] uppercase tracking-[0.2em] text-primary font-mono">Current sprint phases</div>
+              <div className="grid gap-3 xl:grid-cols-2">
+                {activeTemplate.phases.map((phase) => (
+                  <div key={phase.title} className="rounded-lg border border-border/60 bg-background/60 px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-semibold text-foreground">{phase.title}</span>
+                      <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-primary">{phase.owner}</span>
+                    </div>
+                    <p className="mt-1 text-[11px] leading-5 text-muted-foreground font-mono">{phase.outcome}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-lg border border-dashed border-border/60 bg-background/40 px-3 py-3">
+              <div className="text-[10px] uppercase tracking-[0.2em] text-primary font-mono">Sprint-based delivery</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {BUXTER_DELIVERY_SPRINTS.map((sprint) => (
+                  <span key={sprint.id} className="rounded-full border border-border/60 bg-background/70 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-mono">
+                    {sprint.title}
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
           <div className="flex-1">
             <Editor
@@ -301,7 +363,7 @@ export default function IDE() {
         <div className="flex items-center space-x-3">
           <Button variant="ghost" className="font-mono text-xs hover-elevate" onClick={handleReset}>
             <RotateCcw className="w-4 h-4 mr-2" />
-            RESET
+            RESET PRESET
           </Button>
           <Button 
             className="font-mono text-xs bg-primary hover:bg-primary/90 text-primary-foreground font-bold hover-elevate active-elevate-2 min-w-[120px]"

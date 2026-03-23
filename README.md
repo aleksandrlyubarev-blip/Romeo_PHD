@@ -58,6 +58,25 @@ Romeo-Agent-System/
     └── patch.mjs            # Исправление критических багов
 ```
 
+## Новый агент: Buxter
+
+Ветка `buxter` теперь описывает **Buxter** не как одиночного "чертёжника", а как архитектуру автономной мультиагентной CAD-системы для сквозного проектирования.
+
+**Buxter** по ТЗ покрывает полный маршрут:
+- оркестрация и контроль состояний;
+- параметрическое моделирование через FreeCAD Python API;
+- валидация геометрии и топологии;
+- экспорт и интероперабельность для DWG/нейтральных форматов;
+- GUI-автоматизация SolidWorks через CV/RPA;
+- retry / rollback / audit trail для недетерминированных ошибок.
+
+В репозитории это отражено так:
+- Dashboard показывает архитектурный blueprint Buxter MAS с агентными зонами и runtime-ограничениями;
+- IDE по умолчанию стартует с шаблона `Buxter Sprint 3 Automation Layer`, при этом `Buxter Sprint 1 Foundation` остаётся как review/handoff preset, а полный `Buxter End-to-End CAD MAS` — как future-state preset;
+- подробная спецификация вынесена в `docs/buxter-mas-architecture.md`;
+- ТЗ спринтов вынесены в `docs/buxter-sprint-1-spec.md`, `docs/buxter-sprint-2-spec.md` и `docs/buxter-sprint-3-spec.md`;
+- дальнейшая реализация Buxter ведётся по спринтам, а не одним большим релизом.
+
 ## API endpoints
 
 | Метод | URL | Описание |
