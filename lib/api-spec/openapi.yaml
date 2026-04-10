@@ -256,7 +256,7 @@ paths:
                 image:
                   type: string
                   format: binary
-                  description: MRI image file (JPEG or PNG)
+                  description: MRI image file (DICOM, JPEG, or PNG)
               required:
                 - image
       responses:
@@ -268,6 +268,47 @@ paths:
                 $ref: "#/components/schemas/MriAnalysisResult"
         "400":
           description: Bad request (missing or invalid file)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Analysis error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /mri/analyze-series:
+    post:
+      operationId: analyzeMriSeries
+      tags: [mri]
+      summary: Analyze a DICOM series (multiple slices)
+      description: Upload multiple DICOM files from an MRI series. The system selects key slices and analyzes each for cervical spine findings.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                images:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: DICOM files from the MRI series
+              required:
+                - images
+      responses:
+        "200":
+          description: Series analysis results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MriSeriesResult"
+        "400":
+          description: Bad request
           content:
             application/json:
               schema:
@@ -605,6 +646,28 @@ components:
         - additionalFindings
         - disclaimer
         - createdAt
+
+    MriSeriesResult:
+      type: object
+      properties:
+        totalSlicesReceived:
+          type: integer
+        slicesAnalyzed:
+          type: integer
+        seriesDescription:
+          type: string
+        modality:
+          type: string
+        patientName:
+          type: string
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/MriAnalysisResult"
+      required:
+        - totalSlicesReceived
+        - slicesAnalyzed
+        - results
 
     ErrorResponse:
       type: object
