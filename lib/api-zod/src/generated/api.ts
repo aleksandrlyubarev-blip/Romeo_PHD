@@ -209,3 +209,36 @@ export const ListTelemetryEventsResponseItem = zod.object({
 export const ListTelemetryEventsResponse = zod.array(
   ListTelemetryEventsResponseItem,
 );
+
+/**
+ * @summary Analyze cervical spine MRI image
+ */
+export const MriVertebra = zod.object({
+  status: zod.enum(["normal", "abnormal", "indeterminate"]),
+  description: zod.string(),
+  measurements: zod.string().optional(),
+});
+
+export const MriAnalyzeResponse = zod.object({
+  id: zod.number(),
+  overallAssessment: zod.string(),
+  vertebrae: zod.object({
+    c3: MriVertebra,
+    c4: MriVertebra,
+    c5: MriVertebra,
+  }),
+  herniation: zod.object({
+    level: zod.string(),
+    severity: zod.enum(["none", "mild", "moderate", "severe"]),
+    description: zod.string(),
+  }),
+  implant: zod.object({
+    detected: zod.boolean(),
+    integrationStatus: zod.enum(["good", "partial", "poor", "not_applicable"]),
+    description: zod.string(),
+  }),
+  confidenceScore: zod.number(),
+  additionalFindings: zod.array(zod.string()),
+  disclaimer: zod.string(),
+  createdAt: zod.date(),
+});

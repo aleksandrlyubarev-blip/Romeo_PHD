@@ -13,6 +13,8 @@ tags:
     description: Pipeline orchestration operations
   - name: telemetry
     description: AI telemetry and logging
+  - name: mri
+    description: MRI image analysis operations
 
 paths:
   /healthz:
@@ -233,6 +235,45 @@ paths:
                 $ref: "#/components/schemas/Consultation"
         "404":
           description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /mri/analyze:
+    post:
+      operationId: analyzeMri
+      tags: [mri]
+      summary: Analyze cervical spine MRI image
+      description: Upload a cervical spine MRI image for AI-assisted analysis of C3-C5 vertebrae, disc herniation, and implant integration.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: MRI image file (JPEG or PNG)
+              required:
+                - image
+      responses:
+        "200":
+          description: Analysis results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MriAnalysisResult"
+        "400":
+          description: Bad request (missing or invalid file)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Analysis error
           content:
             application/json:
               schema:
@@ -480,6 +521,90 @@ components:
           type: ["string", "null"]
       required:
         - decision
+
+    MriVertebra:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [normal, abnormal, indeterminate]
+        description:
+          type: string
+        measurements:
+          type: string
+      required:
+        - status
+        - description
+
+    MriAnalysisResult:
+      type: object
+      properties:
+        id:
+          type: integer
+        overallAssessment:
+          type: string
+        vertebrae:
+          type: object
+          properties:
+            c3:
+              $ref: "#/components/schemas/MriVertebra"
+            c4:
+              $ref: "#/components/schemas/MriVertebra"
+            c5:
+              $ref: "#/components/schemas/MriVertebra"
+          required:
+            - c3
+            - c4
+            - c5
+        herniation:
+          type: object
+          properties:
+            level:
+              type: string
+            severity:
+              type: string
+              enum: [none, mild, moderate, severe]
+            description:
+              type: string
+          required:
+            - level
+            - severity
+            - description
+        implant:
+          type: object
+          properties:
+            detected:
+              type: boolean
+            integrationStatus:
+              type: string
+              enum: [good, partial, poor, not_applicable]
+            description:
+              type: string
+          required:
+            - detected
+            - integrationStatus
+            - description
+        confidenceScore:
+          type: number
+        additionalFindings:
+          type: array
+          items:
+            type: string
+        disclaimer:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - overallAssessment
+        - vertebrae
+        - herniation
+        - implant
+        - confidenceScore
+        - additionalFindings
+        - disclaimer
+        - createdAt
 
     ErrorResponse:
       type: object
