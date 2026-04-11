@@ -254,6 +254,21 @@ def main():
         indices.append(mid)
         indices.sort()
 
+    # Create output directory for PNG images
+    images_dir = (target.parent if target.is_dir() else target.parent) / "mri_slices_png"
+    images_dir.mkdir(exist_ok=True)
+
+    # Save ALL slices as PNG (for viewing)
+    print(f"\nСохраняю все {total} срезов как PNG в: {images_dir}/")
+    for i, item in enumerate(parsed):
+        meta = item["meta"]
+        inst = meta.get("instance_number", i)
+        loc = meta.get("slice_location", 0)
+        png_path = images_dir / f"slice_{i:03d}_inst{inst}_loc{loc:.1f}.png"
+        with open(png_path, "wb") as f:
+            f.write(item["png"])
+    print(f"  Сохранено {total} PNG-файлов")
+
     print(f"\nАнализирую {len(indices)} ключевых срезов из {total}...")
     print(f"Индексы срезов: {indices}")
     print()
@@ -266,16 +281,23 @@ def main():
               f"(instance={meta.get('instance_number', '?')}, "
               f"location={meta.get('slice_location', '?')})...")
 
+        # Save analyzed slice PNG with special name
+        analyzed_png = images_dir / f"ANALYZED_slice_{idx:03d}.png"
+        with open(analyzed_png, "wb") as f:
+            f.write(item["png"])
+
         try:
             result = analyze_image(client, item["png"])
             result["_slice_index"] = idx
             result["_instance_number"] = meta.get("instance_number")
             result["_slice_location"] = meta.get("slice_location")
+            result["_image_path"] = str(analyzed_png)
             all_results.append(result)
 
             # Print summary for this slice
             oa = result.get("overall_assessment", result.get("raw_response", "N/A"))
             print(f"  → {oa[:120]}...")
+            print(f"  PNG: {analyzed_png}")
             print()
         except Exception as e:
             print(f"  ОШИБКА: {e}")
@@ -290,6 +312,7 @@ def main():
             "series_description": parsed[0]["meta"].get("series_description"),
             "modality": parsed[0]["meta"].get("modality"),
             "patient_name": parsed[0]["meta"].get("patient_name"),
+            "images_directory": str(images_dir),
             "results": all_results,
         }, f, ensure_ascii=False, indent=2)
 
@@ -319,6 +342,8 @@ def main():
         print(f"    Приживление: {impl.get('integration_status', 'N/A')}")
         print(f"    {impl.get('description', '')}")
 
+    print(f"\n📁 PNG-изображения всех срезов: {images_dir}/")
+    print(f"📄 JSON-отчёт: {output_path}")
     print(f"\n⚠️  ДИСКЛЕЙМЕР: Данный анализ выполнен ИИ и НЕ является медицинским")
     print(f"   диагнозом. Все результаты должны быть подтверждены квалифицированным врачом.")
 
