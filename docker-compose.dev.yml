@@ -27,21 +27,6 @@
 
 name: romeo-phd-v7-dev
 
-x-workspace-node-modules: &workspace-node-modules
-  # Anonymous volumes preserving the container's pnpm layout under the
-  # `.:/repo` bind mount. Must list every workspace package's
-  # node_modules because pnpm does not fully hoist by default.
-  - /repo/node_modules
-  - /repo/artifacts/api-server/node_modules
-  - /repo/artifacts/romeo-phd/node_modules
-  - /repo/artifacts/mockup-sandbox/node_modules
-  - /repo/lib/db/node_modules
-  - /repo/lib/api-spec/node_modules
-  - /repo/lib/api-zod/node_modules
-  - /repo/lib/api-client-react/node_modules
-  - /repo/lib/integrations-anthropic-ai/node_modules
-  - /repo/scripts/node_modules
-
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -80,9 +65,21 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
     ports:
       - "${API_PORT:-3001}:3001"
+    # Bind-mount the monorepo, then guard every pnpm-resolved
+    # node_modules tree with an anonymous volume so the host cannot
+    # shadow the container's layout.
     volumes:
       - .:/repo
-      - *workspace-node-modules
+      - /repo/node_modules
+      - /repo/artifacts/api-server/node_modules
+      - /repo/artifacts/romeo-phd/node_modules
+      - /repo/artifacts/mockup-sandbox/node_modules
+      - /repo/lib/db/node_modules
+      - /repo/lib/api-spec/node_modules
+      - /repo/lib/api-zod/node_modules
+      - /repo/lib/api-client-react/node_modules
+      - /repo/lib/integrations-anthropic-ai/node_modules
+      - /repo/scripts/node_modules
     command: ["pnpm", "--filter", "@workspace/api-server", "exec", "tsx", "watch", "./src/index.ts"]
 
   ui:
@@ -105,7 +102,16 @@ services:
       - "${VITE_PORT:-5173}:5173"
     volumes:
       - .:/repo
-      - *workspace-node-modules
+      - /repo/node_modules
+      - /repo/artifacts/api-server/node_modules
+      - /repo/artifacts/romeo-phd/node_modules
+      - /repo/artifacts/mockup-sandbox/node_modules
+      - /repo/lib/db/node_modules
+      - /repo/lib/api-spec/node_modules
+      - /repo/lib/api-zod/node_modules
+      - /repo/lib/api-client-react/node_modules
+      - /repo/lib/integrations-anthropic-ai/node_modules
+      - /repo/scripts/node_modules
     command: ["pnpm", "--filter", "@workspace/romeo-phd", "run", "dev"]
 
 volumes:
