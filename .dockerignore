@@ -1,0 +1,53 @@
+# Keep Docker build contexts small and reproducible.
+# Mirrors the repo's .gitignore plus Docker-specific exclusions.
+
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# CI / editor / OS
+.github
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Docs that are not needed inside images
+docs
+README.md
+LICENSE
+
+# Node / pnpm: never ship host installs into the builder
+**/node_modules
+**/.pnpm-store
+.pnpm-store
+
+# Build outputs from a host-side `pnpm run build`
+**/dist
+**/build
+**/.next
+**/.turbo
+**/.vite
+
+# Logs / caches
+**/*.log
+**/.cache
+**/.eslintcache
+
+# Local env files (compose supplies env via explicit variables)
+.env
+.env.*
+!.env.example
+
+# Replit leftovers (none should remain after commits 62cc3b7..1f13626,
+# but keep as a guard against accidental reintroduction)
+.replit
+.replitignore
+**/.replit-artifact
+
+# Docker meta
+Dockerfile
+**/Dockerfile
+.dockerignore
+docker-compose*.yml
