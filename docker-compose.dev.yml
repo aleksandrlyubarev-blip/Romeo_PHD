@@ -1,0 +1,113 @@
+# Romeo_PHD v7 — dev stack with HMR / file watch.
+#
+# Differences vs docker-compose.yml (prod-like):
+#   - api-server runs via `tsx watch ./src/index.ts`, not the prebuilt
+#     esbuild CJS bundle.
+#   - ui runs via `vite` (dev server with HMR), not nginx serving a build.
+#   - The monorepo is bind-mounted into /repo so edits on the host are
+#     reflected instantly. Anonymous volumes guard every `node_modules`
+#     tree so the container's pnpm-resolved modules aren't shadowed by
+#     whatever (if anything) exists on the host.
+#
+# Both api-server and ui images are built with `target: builder` from
+# the existing Dockerfiles. The builder stage already runs
+# `pnpm install --frozen-lockfile`, which is what dev needs. The extra
+# `pnpm … run build` at the end of each builder stage is wasted work in
+# dev mode, but it's idempotent and keeps Dockerfiles single-source.
+#
+# Usage:
+#   cp .env.example .env && <edit ANTHROPIC_API_KEY>
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# UI:  http://localhost:${VITE_PORT:-5173}
+# API: http://localhost:${API_PORT:-3001}
+#
+# Tip: run `docker compose -f docker-compose.dev.yml up postgres` first
+# if you only want the database and prefer to run api/ui on the host.
+
+name: romeo-phd-v7-dev
+
+x-workspace-node-modules: &workspace-node-modules
+  # Anonymous volumes preserving the container's pnpm layout under the
+  # `.:/repo` bind mount. Must list every workspace package's
+  # node_modules because pnpm does not fully hoist by default.
+  - /repo/node_modules
+  - /repo/artifacts/api-server/node_modules
+  - /repo/artifacts/romeo-phd/node_modules
+  - /repo/artifacts/mockup-sandbox/node_modules
+  - /repo/lib/db/node_modules
+  - /repo/lib/api-spec/node_modules
+  - /repo/lib/api-zod/node_modules
+  - /repo/lib/api-client-react/node_modules
+  - /repo/lib/integrations-anthropic-ai/node_modules
+  - /repo/scripts/node_modules
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: romeo-phd-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api-server:
+    build:
+      context: .
+      dockerfile: artifacts/api-server/Dockerfile
+      target: builder
+    image: romeo-phd/api-server:v7-dev-watch
+    container_name: romeo-phd-api-server-dev
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    working_dir: /repo
+    environment:
+      NODE_ENV: development
+      PORT: "3001"
+      DATABASE_URL: ${DATABASE_URL}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    ports:
+      - "${API_PORT:-3001}:3001"
+    volumes:
+      - .:/repo
+      - *workspace-node-modules
+    command: ["pnpm", "--filter", "@workspace/api-server", "exec", "tsx", "watch", "./src/index.ts"]
+
+  ui:
+    build:
+      context: .
+      dockerfile: artifacts/romeo-phd/Dockerfile
+      target: builder
+    image: romeo-phd/ui:v7-dev-hmr
+    container_name: romeo-phd-ui-dev
+    restart: unless-stopped
+    depends_on:
+      - api-server
+    working_dir: /repo
+    environment:
+      NODE_ENV: development
+      # vite.config.ts requires PORT and BASE_PATH at module load.
+      PORT: ${VITE_PORT:-5173}
+      BASE_PATH: ${BASE_PATH:-/}
+    ports:
+      - "${VITE_PORT:-5173}:5173"
+    volumes:
+      - .:/repo
+      - *workspace-node-modules
+    command: ["pnpm", "--filter", "@workspace/romeo-phd", "run", "dev"]
+
+volumes:
+  postgres-data-dev:
+    name: romeo-phd-postgres-data-dev
