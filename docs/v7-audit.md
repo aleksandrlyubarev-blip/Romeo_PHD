@@ -94,6 +94,10 @@ Its purpose is rendering generated UI mockups inside the IDE page.
 - Current surface in repo: **dashboard blueprint + YAML pipeline
   templates only**. No Python agent code, no FreeCAD integration,
   no RPA runner. Buxter is a specified use-case, not a running one.
+- **Out of scope for the v7 branch.** Buxter is being developed in a
+  separate branch (see §6 decisions). The v7 branch only touches the
+  platform layer; it must not modify Buxter docs, templates, or UI
+  blueprints.
 
 ---
 
@@ -104,7 +108,7 @@ results. Before any v7 work assumes they exist, we reset expectations.
 
 | Claim | Reality |
 |---|---|
-| **Moltis — Rust sandbox** | No Rust files in repo. Zero matches for `moltis`. `artifacts/mockup-sandbox` is a Vite UI preview plugin, not a runtime sandbox. |
+| **Moltis — Rust sandbox** | No Rust files in repo. Zero matches for `moltis`. `artifacts/mockup-sandbox` is a Vite UI preview plugin, not a runtime sandbox. Moltis was *planned* for fast execution — it is a future Phase 4 component, not existing code. |
 | **Semantic conflict resolution** | Zero matches in code search. Not implemented. |
 | **Multi-tenant namespaces / RBAC for agents** | No implementation. No auth layer visible in `api-server/src/routes`. |
 | **OpenTelemetry / Jaeger / Prometheus / Grafana** | Not wired. Telemetry is a custom `/api/telemetry` log stream, not OTel. |
@@ -113,7 +117,7 @@ results. Before any v7 work assumes they exist, we reset expectations.
 | **Reconciliation loop / operator-style controller** | Not present. Executor is a one-shot runner, not a controller. |
 | **SPIFFE identity / mTLS between agents** | Not present. |
 | **Circuit breakers / backpressure / DLQ / cost scheduler** | Not present. |
-| **CI workflows** | `.github/` directory does **not exist**. No lint/test/build automation. |
+| **CI workflows** | Originally missing; **added in this branch** as `.github/workflows/ci.yml` (commit `121c668`). |
 | **Docker / Helm / kind-config** | No `Dockerfile`, no K8s manifests, no Helm chart, no kind config. Project currently runs only in Codespaces / Replit. |
 
 **Nothing above is a criticism of past work — a lot of surface has been
@@ -129,8 +133,8 @@ Summarizing the gaps in one place so the roadmap can be ordered:
 1. **No packaging layer.** To deploy this anywhere beyond a Codespace we
    need a `Dockerfile` per artifact + a `docker-compose.yml` for the
    whole stack (api-server, UI, Postgres).
-2. **No CI.** Nothing enforces `pnpm run typecheck` / `build` on PRs.
-   This is risk #1 before any v7 refactors.
+2. **~~No CI.~~** ✅ **Fixed in this branch** (`.github/workflows/ci.yml`).
+   Typecheck + build on every PR / push to `main` and `claude/**`.
 3. **No K8s surface.** No manifests, no CRDs, no controller, no Helm.
 4. **No identity / isolation model.** Anthropic API key is pulled from
    env; there is no per-agent identity, no mTLS, no sandbox escape
@@ -140,10 +144,10 @@ Summarizing the gaps in one place so the roadmap can be ordered:
    correlate across agents, pipelines and LLM calls.
 6. **DB is single-tenant.** Drizzle schema has one namespace. Multi-tenant
    `Pipeline` resources will need schema changes and migrations.
-7. **Replit/Codespaces coupling.** `pnpm-workspace.yaml` pins
-   `@replit/vite-plugin-*`; `.replitignore` is in the root; each
-   artifact has a `.replit-artifact/` folder. Nothing fatal, but K8s
-   deployments will need these plugins gated to dev-only.
+7. **Replit coupling, scheduled for removal.** `pnpm-workspace.yaml`
+   pins `@replit/vite-plugin-*`; `.replitignore` is in the root; each
+   artifact has a `.replit-artifact/` folder. Per §6 decision we no
+   longer use Replit — this can be cleaned up in Phase 0.
 
 ---
 
@@ -152,94 +156,92 @@ Summarizing the gaps in one place so the roadmap can be ordered:
 Ordering is chosen so each step is **shippable on its own** and
 **unblocks the next step**. No "big bang" rewrites.
 
-### Phase 0 — Baseline safety net (this PR + one more)
-1. This audit doc (you're reading it). ✅
-2. **Add `.github/workflows/ci.yml`** — lint + typecheck + build on PR.
-   This is the *single highest-leverage change*: without CI, every
-   subsequent v7 step is unverified.
-3. **Add a root `Dockerfile` + `docker-compose.yml`** — api-server, UI,
+### Phase 0 — Baseline safety net
+1. ✅ This audit doc (`docs/v7-audit.md`).
+2. ✅ **`.github/workflows/ci.yml`** — lint (future) + typecheck + build
+   on PR. Single highest-leverage change: without CI, every subsequent
+   v7 step is unverified. **Landed in commit `121c668`.**
+3. ⏳ **Root `Dockerfile` + `docker-compose.yml`** — api-server, UI,
    Postgres. No K8s yet. Goal: `docker compose up` gives a working
-   stack on any machine, not just Codespaces.
+   stack on any machine.
+4. ⏳ **Replit cleanup** (per §6 decision). Remove `@replit/vite-plugin-*`
+   from the workspace catalog, delete `.replitignore` and
+   `.replit-artifact/` folders, drop Replit plugins from any
+   `vite.config.ts`. This must not regress CI.
 
 ### Phase 1 — Kubernetes packaging (not yet a control plane)
-4. **Helm chart `charts/romeo-phd/`** that deploys the existing
+5. **Helm chart `charts/romeo-phd/`** that deploys the existing
    api-server + UI + Postgres into any cluster. Still one-tenant, still
    one pipeline runner. This is "lift and shift", not "operator".
-5. **`kind-config.yaml` + `make kind-up`** — one-command local cluster
+6. **`kind-config.yaml` + `make kind-up`** — one-command local cluster
    for developers.
 
 Shipping Phase 1 means "Romeo_PHD runs on Kubernetes". That is already
 a real v7 milestone — *before* we get into CRDs.
 
 ### Phase 2 — Control plane (the actual "Kubernetes for Agents" bit)
-6. Define CRDs: `AgentCard`, `Pipeline`, `AgentRun`. These should mirror
+7. Define CRDs: `AgentCard`, `Pipeline`, `AgentRun`. These should mirror
    the current YAML schema in `pipeline-parser.ts`, so we have a clean
    1:1 migration path.
-7. Write the **controller** (TypeScript, using `@kubernetes/client-node`)
+8. Write the **controller** (TypeScript, using `@kubernetes/client-node`)
    that watches `Pipeline` resources and invokes the existing
    `pipeline-executor.ts` in a reconciliation loop. Reuse the executor —
    do not rewrite it.
-8. Multi-tenant namespaces + a minimal RBAC surface for agents.
+9. Multi-tenant namespaces + a minimal RBAC surface for agents.
 
 ### Phase 3 — Reliability & observability
-9. OpenTelemetry SDK in `api-server` + exporter to an OTLP collector.
-   Replace (or shadow) `/api/telemetry` with OTel traces.
-10. Prometheus metrics endpoint; Grafana dashboards shipped with the
+10. OpenTelemetry SDK in `api-server` + exporter to an OTLP collector.
+    Replace (or shadow) `/api/telemetry` with OTel traces.
+11. Prometheus metrics endpoint; Grafana dashboards shipped with the
     Helm chart.
-11. Retry / circuit-breaker / DLQ configurable in the YAML schema.
+12. Retry / circuit-breaker / DLQ configurable in the YAML schema.
 
-### Phase 4 — Identity & isolation
-12. SPIFFE identity per agent pod; mTLS via SPIRE sidecar.
-13. **Real** sandbox for Buxter's RPA agent — candidates: gVisor,
-    Firecracker, or a minimal Rust runner. This is where a "Moltis-like"
-    component could be *introduced* (not continued — it doesn't exist
-    yet).
+### Phase 4 — Identity & isolation (Moltis lands here)
+13. SPIFFE identity per agent pod; mTLS via SPIRE sidecar.
+14. **Moltis** — introduced here as a new Rust sandbox crate, per §6
+    decision. Target use: fast execution / isolation for high-risk
+    agents (Buxter's RPA runner being the canonical first consumer).
+    Candidates to evaluate against Moltis: gVisor, Firecracker,
+    WasmEdge. The choice is made in Phase 4, not earlier.
 
 ### Phase 5 — Standards & ecosystem
-14. A2A protocol adapter + MCP gateway. Feasible only after the control
+15. A2A protocol adapter + MCP gateway. Feasible only after the control
     plane exists.
 
 ---
 
 ## 5. Recommended first PR after this audit
 
-**CI + Dockerfiles + docker-compose** (items 2 and 3 above).
+~~CI + Dockerfiles + docker-compose.~~ Split into two landings:
 
-Rationale:
-- Smallest diff that removes the largest amount of future risk.
-- Lets every subsequent v7 PR land with verified `pnpm typecheck` and a
-  reproducible "it runs locally" story.
-- Does not touch any existing TypeScript in `artifacts/` or `lib/` —
-  pure additive infrastructure.
-- Unblocks Phase 1 (Helm) because the Helm chart will reference the
-  same Docker images.
+- ✅ **Landing 1 (done):** `.github/workflows/ci.yml`. Commit `121c668`.
+- ⏳ **Landing 2 (next):** `Dockerfile` per artifact + root
+  `docker-compose.yml` + Replit cleanup. Can ride in a single PR because
+  removing Replit plugins is only safe once CI is green.
 
-All later phases (CRDs, controllers, SPIFFE, OTel) should be gated on
-Phase 0 being green in CI first.
+All later phases (CRDs, controllers, SPIFFE, OTel) are gated on Phase 0
+being green in CI first.
 
 ---
 
-## 6. Open questions for Aleksandr
+## 6. Decisions (resolved 2026-04-14)
 
-1. **`andrew-analitic` scope.** The branch spec points at both
-   `aleksandrlyubarev-blip/andrew-analitic` and `aleksandrlyubarev-blip/romeo_phd`,
-   but `andrew-analitic` is a **different project** (Python, `core/`,
-   `bridge/`, `lcb/`, already has `Dockerfile` + `docker-compose.yml` +
-   `render.yaml`). Should v7 work touch it at all? If yes, **why** —
-   is it a future control-plane host, a separate service, or unrelated?
-   I will not push anything to it until this is answered.
-2. **Buxter runtime language.** The MAS doc pins Python + FreeCAD. The
-   current repo is 100% TypeScript. Do we introduce a
-   `artifacts/buxter-agent/` Python package as part of v7, or keep
-   Buxter purely declarative (YAML pipelines driving an external
-   runtime) until Phase 2?
-3. **"Moltis".** Should we (a) drop the name entirely, (b) introduce it
-   as a new Rust sandbox crate in Phase 4, or (c) something else? I do
-   not want to resurrect a name that currently points at nothing in
-   the codebase.
-4. **Replit coupling.** Are we committed to Codespaces/Replit as the
-   dev environment, or is the docker-compose path the new default?
-   This affects whether `@replit/vite-plugin-*` stays in the hot path.
+Original open questions from the first revision of this doc, now
+answered by Aleksandr:
 
-Answer these four questions and Phase 0 item 2 (CI workflow) can land
-the same day.
+1. **`andrew-analitic` scope** — **Out of scope.** v7 work only touches
+   `romeo_phd`. The branch spec that referenced `andrew-analitic` will
+   not be honored; no pushes will land there from this effort.
+2. **Buxter runtime language** — **Out of scope for v7.** Buxter is
+   developed in a separate branch. The v7 branch must not modify
+   Buxter docs, YAML templates, or dashboard blueprints. v7 only
+   delivers the platform (packaging, K8s, control plane, observability,
+   isolation) that Buxter will later run on.
+3. **"Moltis"** — **Keep as planned Phase 4 component.** Moltis was
+   planned as a fast-execution sandbox and will be introduced as a new
+   Rust crate when Phase 4 (identity & isolation) lands. It does not
+   exist in the repo today and will not be referenced as if it did.
+4. **Replit coupling** — **Remove.** Replit is no longer the dev
+   environment. Phase 0 item 4 handles the cleanup
+   (`@replit/vite-plugin-*`, `.replitignore`, `.replit-artifact/`).
+   docker-compose becomes the default local stack.
