@@ -1,0 +1,84 @@
+# Romeo_PHD v7 — prod-like local stack.
+#
+# What this brings up:
+#   - postgres  : pgvector/pgvector:pg16, initialised with the DB/user/pw
+#                 from .env, persistent volume `postgres-data`.
+#   - api-server: Express + pipeline executor, built from
+#                 artifacts/api-server/Dockerfile, talks to `postgres`.
+#   - ui        : nginx serving the Vite-built bundle, built from
+#                 artifacts/romeo-phd/Dockerfile, reverse-proxies /api/
+#                 to `api-server` (see artifacts/romeo-phd/nginx.conf).
+#
+# Usage:
+#   cp .env.example .env && <edit ANTHROPIC_API_KEY>
+#   docker compose up --build
+#
+# Then open http://localhost:${UI_PORT} (default 8080).
+#
+# For a fast edit/reload loop use docker-compose.dev.yml instead
+# (tsx --watch + vite dev with hot module reload).
+
+name: romeo-phd-v7
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: romeo-phd-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api-server:
+    build:
+      context: .
+      dockerfile: artifacts/api-server/Dockerfile
+    image: romeo-phd/api-server:v7-dev
+    container_name: romeo-phd-api-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      DATABASE_URL: ${DATABASE_URL}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    ports:
+      - "${API_PORT:-3001}:3001"
+    healthcheck:
+      # /api/healthz is defined in artifacts/api-server/src/routes/health.ts
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  ui:
+    build:
+      context: .
+      dockerfile: artifacts/romeo-phd/Dockerfile
+      args:
+        BUILD_BASE_PATH: ${BASE_PATH:-/}
+    image: romeo-phd/ui:v7-dev
+    container_name: romeo-phd-ui
+    restart: unless-stopped
+    depends_on:
+      api-server:
+        condition: service_healthy
+    ports:
+      - "${UI_PORT:-8080}:80"
+
+volumes:
+  postgres-data:
+    name: romeo-phd-postgres-data
