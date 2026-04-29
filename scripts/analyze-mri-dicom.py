@@ -185,7 +185,13 @@ def analyze_image(client: anthropic.Anthropic, png_bytes: bytes) -> dict:
         ],
     )
 
-    text = message.content[0].text
+    # Pick the first text block — vision responses can interleave non-text blocks
+    # depending on tool use, and indexing [0].text blindly raises AttributeError.
+    text_blocks = [b for b in message.content if getattr(b, "type", None) == "text"]
+    if not text_blocks:
+        raise ValueError("MRI analysis returned no text content blocks")
+    text = text_blocks[0].text
+
     import re
     match = re.search(r"\{[\s\S]*\}", text)
     if match:

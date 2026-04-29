@@ -1,32 +1,36 @@
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { z } from "zod";
 
-export interface VertebraAssessment {
-  status: "normal" | "abnormal" | "indeterminate";
-  description: string;
-  measurements?: string;
-}
+const VertebraAssessmentSchema = z.object({
+  status: z.enum(["normal", "abnormal", "indeterminate"]),
+  description: z.string(),
+  measurements: z.string().optional(),
+});
 
-export interface MriAnalysisResult {
-  overallAssessment: string;
-  vertebrae: {
-    c3: VertebraAssessment;
-    c4: VertebraAssessment;
-    c5: VertebraAssessment;
-  };
-  herniation: {
-    level: string;
-    severity: "none" | "mild" | "moderate" | "severe";
-    description: string;
-  };
-  implant: {
-    detected: boolean;
-    integrationStatus: "good" | "partial" | "poor" | "not_applicable";
-    description: string;
-  };
-  confidenceScore: number;
-  additionalFindings: string[];
-  disclaimer: string;
-}
+export const MriAnalysisResultSchema = z.object({
+  overallAssessment: z.string(),
+  vertebrae: z.object({
+    c3: VertebraAssessmentSchema,
+    c4: VertebraAssessmentSchema,
+    c5: VertebraAssessmentSchema,
+  }),
+  herniation: z.object({
+    level: z.string(),
+    severity: z.enum(["none", "mild", "moderate", "severe"]),
+    description: z.string(),
+  }),
+  implant: z.object({
+    detected: z.boolean(),
+    integrationStatus: z.enum(["good", "partial", "poor", "not_applicable"]),
+    description: z.string(),
+  }),
+  confidenceScore: z.number(),
+  additionalFindings: z.array(z.string()),
+  disclaimer: z.string(),
+});
+
+export type VertebraAssessment = z.infer<typeof VertebraAssessmentSchema>;
+export type MriAnalysisResult = z.infer<typeof MriAnalysisResultSchema>;
 
 const CERVICAL_SPINE_SYSTEM_PROMPT = `You are a medical imaging analysis assistant specializing in cervical spine MRI interpretation.
 
@@ -127,11 +131,51 @@ export async function analyzeMriImage(
     throw new Error("MRI analysis produced no text output");
   }
 
+  // Prefer parsing the whole response (the system prompt asks for raw JSON);
+  // fall back to extracting the first balanced {...} object if the model wraps
+  // its reply. Then validate the shape at runtime — JSON.parse alone leaves
+  // missing/extra fields silently broken downstream.
+  const raw = content.text.trim();
+  let parsed: unknown;
   try {
-    const jsonMatch = content.text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("No structured JSON found in analysis response");
-    return JSON.parse(jsonMatch[0]) as MriAnalysisResult;
+    parsed = JSON.parse(raw);
   } catch {
-    throw new Error("Failed to parse MRI analysis response as JSON");
+    const extracted = extractFirstJsonObject(raw);
+    if (!extracted) throw new Error("No structured JSON found in analysis response");
+    try {
+      parsed = JSON.parse(extracted);
+    } catch {
+      throw new Error("Failed to parse MRI analysis response as JSON");
+    }
   }
+
+  const result = MriAnalysisResultSchema.safeParse(parsed);
+  if (!result.success) {
+    throw new Error(`MRI analysis JSON did not match expected shape: ${result.error.message}`);
+  }
+  return result.data;
+}
+
+function extractFirstJsonObject(text: string): string | null {
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (ch === "\\") escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
 }

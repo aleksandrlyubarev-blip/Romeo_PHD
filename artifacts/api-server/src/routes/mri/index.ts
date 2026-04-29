@@ -1,10 +1,28 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
+import { z } from "zod";
 import { db, mriAnalyses } from "@workspace/db";
 import { analyzeMriImage, type MriAnalysisResult } from "../../lib/mri-analyzer";
 import { parseDicom, isDicomFile } from "../../lib/dicom-converter";
 
 const router: IRouter = Router();
+
+// ─── Body validation schemas ────────────────────────────────────────────────
+// The MRI endpoints rely on multipart file uploads (handled by multer) and do
+// not consume any structured body fields today. The schemas below validate
+// that any optional textual companion fields, if present, are strings — and
+// reject unknown fields so future additions are intentional.
+const MriAnalyzeBody = z
+  .object({
+    notes: z.string().max(2000).optional(),
+  })
+  .strict();
+
+const MriAnalyzeSeriesBody = z
+  .object({
+    notes: z.string().max(2000).optional(),
+  })
+  .strict();
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -82,6 +100,13 @@ router.post("/mri/analyze", upload.single("image"), async (req, res): Promise<vo
     return;
   }
 
+  // Validate any non-file body fields (multer leaves these in req.body).
+  const parsedBody = MriAnalyzeBody.safeParse(req.body ?? {});
+  if (!parsedBody.success) {
+    res.status(400).json({ error: parsedBody.error.issues });
+    return;
+  }
+
   try {
     const { imageBase64, mimeType, dicomMetadata } = await processFile(req.file);
     const result = await analyzeMriImage(imageBase64, mimeType);
@@ -100,8 +125,8 @@ router.post("/mri/analyze", upload.single("image"), async (req, res): Promise<vo
       createdAt: saved.createdAt,
     });
   } catch (err) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error during MRI analysis";
-    res.status(500).json({ error: errMsg });
+    console.error("MRI analyze failed:", err);
+    res.status(500).json({ error: "Failed to analyze DICOM" });
   }
 });
 
@@ -110,6 +135,13 @@ router.post("/mri/analyze-series", uploadSeries.array("images", 300), async (req
   const files = req.files as Express.Multer.File[] | undefined;
   if (!files || files.length === 0) {
     res.status(400).json({ error: "No files provided. Send DICOM files in the 'images' field." });
+    return;
+  }
+
+  // Validate any non-file body fields (multer leaves these in req.body).
+  const parsedBody = MriAnalyzeSeriesBody.safeParse(req.body ?? {});
+  if (!parsedBody.success) {
+    res.status(400).json({ error: parsedBody.error.issues });
     return;
   }
 
@@ -130,11 +162,17 @@ router.post("/mri/analyze-series", uploadSeries.array("images", 300), async (req
       return;
     }
 
-    // Sort by instance number or slice location
+    // Sort by a single, consistent metric per pass — mixing instanceNumber
+    // (typically 1..N) with sliceLocation (mm scale) within the same compare
+    // produces a non-monotonic ordering.
     parsed.sort((a, b) => {
-      const aNum = a.metadata.instanceNumber ?? a.metadata.sliceLocation ?? 0;
-      const bNum = b.metadata.instanceNumber ?? b.metadata.sliceLocation ?? 0;
-      return aNum - bNum;
+      if (a.metadata.instanceNumber != null && b.metadata.instanceNumber != null) {
+        return a.metadata.instanceNumber - b.metadata.instanceNumber;
+      }
+      if (a.metadata.sliceLocation != null && b.metadata.sliceLocation != null) {
+        return a.metadata.sliceLocation - b.metadata.sliceLocation;
+      }
+      return 0;
     });
 
     // Select key slices for analysis (mid-sagittal views are most informative)
@@ -146,11 +184,15 @@ router.post("/mri/analyze-series", uploadSeries.array("images", 300), async (req
     for (let i = 0; i < totalSlices && selectedIndices.length < numToAnalyze; i += step) {
       selectedIndices.push(i);
     }
-    // Always include the middle slice
+    // Always include the middle slice — but only if it's not already selected,
+    // and after dedupe trim back to numToAnalyze to avoid an extra Anthropic call.
     const midIdx = Math.floor(totalSlices / 2);
     if (!selectedIndices.includes(midIdx)) {
       selectedIndices.push(midIdx);
       selectedIndices.sort((a, b) => a - b);
+    }
+    while (selectedIndices.length > numToAnalyze) {
+      selectedIndices.pop();
     }
 
     const results = [];
@@ -186,8 +228,8 @@ router.post("/mri/analyze-series", uploadSeries.array("images", 300), async (req
       results,
     });
   } catch (err) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error during series analysis";
-    res.status(500).json({ error: errMsg });
+    console.error("MRI analyze-series failed:", err);
+    res.status(500).json({ error: "Failed to analyze DICOM" });
   }
 });
 

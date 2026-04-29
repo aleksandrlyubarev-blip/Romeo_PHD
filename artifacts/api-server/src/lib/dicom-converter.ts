@@ -68,20 +68,25 @@ function getPixelData(dataSet: dicomParser.DataSet, metadata: DicomMetadata): In
   const length = pixelDataElement.length;
 
   if (metadata.bitsAllocated === 16) {
-    const buffer = byteArray.buffer.slice(
+    // Copy into a fresh, aligned ArrayBuffer — typed-array views require
+    // alignment, but `byteArray.byteOffset + offset` may be odd which would
+    // throw a RangeError when constructing Int16Array/Uint16Array directly.
+    const aligned = new Uint8Array(
+      byteArray.buffer,
       byteArray.byteOffset + offset,
-      byteArray.byteOffset + offset + length,
-    );
+      length,
+    ).slice().buffer;
     if (metadata.pixelRepresentation === 1) {
-      return new Int16Array(buffer);
+      return new Int16Array(aligned);
     }
-    return new Uint16Array(buffer);
+    return new Uint16Array(aligned);
   }
 
-  // 8-bit: promote to Uint16Array
+  // 8-bit: read bytes into a Uint8Array source view, then promote to Uint16Array
+  const src = new Uint8Array(byteArray.buffer, byteArray.byteOffset + offset, length);
   const data = new Uint16Array(length);
   for (let i = 0; i < length; i++) {
-    data[i] = byteArray[offset + i];
+    data[i] = src[i];
   }
   return data;
 }
