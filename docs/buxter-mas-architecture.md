@@ -12,10 +12,13 @@ Buxter — это автономная мультиагентная CAD-сист
 - управляет состояниями, retry и rollback;
 - публикует единый журнал действий и handoff-событий.
 
-### 2.2 FreeCAD Modeling Agent
-- работает через Python API FreeCAD;
+### 2.2 Modeling Agent
+- работает через Python API выбранного CAD-ядра;
 - создаёт параметрические 3D-модели;
-- сохраняет редактируемые размеры, feature intent и производственные атрибуты.
+- сохраняет редактируемые размеры, feature intent и производственные атрибуты;
+- поддерживает два бэкенда:
+  - **FreeCAD** (default, headless `freecadcmd`) — батч и CI;
+  - **Autodesk Fusion 360** — timeline + native `.f3d`, см. [`buxter-fusion-360-integration.md`](./buxter-fusion-360-integration.md).
 
 ### 2.3 Geometry & Topology Validator
 - проверяет целостность B-Rep/топологии;
@@ -35,7 +38,7 @@ Buxter — это автономная мультиагентная CAD-сист
 ## 3. Сквозной workflow
 
 1. **Scope orchestration** — Buxter формализует входные требования, критерии качества и rollback checkpoints.
-2. **FreeCAD modeling** — создаётся или модифицируется параметрическая 3D-модель.
+2. **Modeling** — создаётся или модифицируется параметрическая 3D-модель (FreeCAD или Fusion 360).
 3. **Geometry validation** — проверяются топология, коллизии и экспортная готовность.
 4. **Interoperability export** — формируются нейтральные CAD-артефакты и правила обмена данными.
 5. **AutoCAD documentation** — выпускаются 2D-чертежи и аннотированные DWG-доставки.
@@ -53,6 +56,7 @@ Buxter — это автономная мультиагентная CAD-сист
 
 - Основной язык: Python 3.11+.
 - FreeCAD integration: Python API.
+- Fusion 360 integration: Python API через скрипты/MCP, см. `lib/integrations/fusion_360_integrations`.
 - CV/RPA: OpenCV/YOLO + PyAutoGUI/кастомный раннер.
 - Возможный SolidWorks-side microservice: C#.
 - Кандидаты orchestration layer: LangGraph, CrewAI, AutoGen, Semantic Kernel или custom MAS на FastAPI + Redis.
@@ -61,4 +65,5 @@ Buxter — это автономная мультиагентная CAD-сист
 
 - На Dashboard Buxter показывается как blueprint multi-agent CAD stack.
 - В IDE есть стартовый pipeline-шаблон `Buxter End-to-End CAD MAS`.
-- Этот шаблон специально раскладывает процесс по ролям orchestration, FreeCAD, validation, interoperability, AutoCAD, SolidWorks RPA и rollback.
+- Этот шаблон специально раскладывает процесс по ролям orchestration, modeling, validation, interoperability, AutoCAD, SolidWorks RPA и rollback.
+- Тип ноды `buxter.fusion-360` выведён в `lib/integrations/fusion_360_integrations` и используется в Sprint 3 Automation Layer-шаблоне.
