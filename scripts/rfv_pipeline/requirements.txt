@@ -1,0 +1,11 @@
+# Core (always required)
+numpy>=1.26
+
+# Disk-mode helpers (PNG-16 read/write)
+imageio>=2.34
+imageio-ffmpeg>=0.4.9   # optional, only if you want to drive ffmpeg via imageio
+
+# Stream-mode does NOT require any of the above except numpy.
+# ffmpeg/ffprobe are external — install via your OS package manager
+# (apt: ffmpeg; brew: ffmpeg; choco: ffmpeg) and ensure they are on PATH,
+# or set the RFV_FFMPEG env var to a custom binary.
