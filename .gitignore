@@ -4,3 +4,9 @@ dist/
 .env.local
 *.tsbuildinfo
 .DS_Store
+
+# ml/ — generated datasets, training artifacts, python caches
+ml/data/
+ml/work_dirs/
+__pycache__/
+*.pyc
