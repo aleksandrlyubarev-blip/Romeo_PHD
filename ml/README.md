@@ -22,12 +22,16 @@ ml/
     coco_to_sa2va.py            # COCO instance-seg -> Sa2VA conversation JSONL (GCG-формат)
     build_contrastive.py        # из Sa2VA JSONL -> контрастные пары (good vs blurry) для трека C
     make_manifest.py            # train/val/test split + манифест датасета
+    golden.py                   # эталон платы («golden board») из одного/нескольких хороших образцов
+    compare.py                  # сравнение образца с эталоном -> diff дефектов + вердикт OK/NOK (§10 ТЗ)
+    inject_defects.py           # симулятор дефектов на уровне ОПИСАНИЯ — для тестов compare/метрик
   scripts/
     prepare_dataset.sh          # end-to-end: sample -> convert -> contrastive -> manifest
+    eval_smoke.sh               # golden -> симуляция дефектов -> compare -> метрики вердикта
     train_lora_local.sh         # запуск xtuner-обучения локально / на одной ноде
     launch_gcp_vertex.sh        # submit Vertex AI Custom Job (A100/H100)
   eval/
-    metrics.py                  # mAP / IoU / defect recall / false-call rate (скелет)
+    metrics.py                  # seg: precision/recall/IoU per-class; verdicts: defect recall / false-call / escape / e2e acc
 ```
 
 ## Быстрый старт (подготовка данных)
@@ -70,6 +74,34 @@ PROJECT_ID=... REGION=us-central1 BUCKET=gs://... IMAGE_URI=... \
 ```
 
 Подробности по железу, бюджету и воспроизводимости — раздел 8 ТЗ.
+
+## Downstream: вердикт good/bad (§10 ТЗ)
+
+Двухступенчатая схема: VLM выдаёт описание образца -> `compare.py` сопоставляет его
+с эталоном (`golden.py`) и формирует diff дефектов + вердикт `OK/NOK`.
+
+```bash
+# 1) собрать эталон из хороших образцов (Sa2VA describe-сэмплы или объекты схемы)
+python3 -m pcba.golden build --board-type my_board_v1 \
+  --from data/manifest/train.jsonl --image-id 1 --out data/golden/my_board_v1.json
+
+# 2) сравнить описание образца с эталоном
+python3 -m pcba.compare --golden data/golden/my_board_v1.json --sample sample_description.json
+
+# 3) метрики вердикта на наборе кейсов {"sample":..., "gt_defects":[...], "label":"OK|NOK"}
+python3 -m eval.metrics verdicts --cases data/eval/cases.jsonl --golden data/golden/my_board_v1.json
+# метрики сегментации/классификации:
+python3 -m eval.metrics seg --pred preds.jsonl --gt data/manifest/test.jsonl --iou 0.5
+
+# всё вместе на синтетическом сэмпле (smoke):
+bash scripts/eval_smoke.sh
+```
+
+`inject_defects.py` мутирует ОПИСАНИЕ хорошей платы (имитация вывода VLM на дефектной)
+для проверки `compare.py`/метрик без модели. Генерация дефектных ИЗОБРАЖЕНИЙ — задача
+пайплайна «Бригада» (`RomeoFlexVision/docs/brigada-architecture.md`), не этого модуля.
+Пороги вердикта (`ComparePolicy` в `compare.py`) и допуски слотов (`golden.py`)
+настраиваются под конкретное изделие; целевые значения метрик — раздел 10 ТЗ.
 
 ## Замечания
 

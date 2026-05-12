@@ -147,23 +147,139 @@ def evaluate(pred_path: str, gt_path: str, iou_thr: float, use_polygon: bool) ->
                     "class_acc_on_match": round(cls_correct_on_match / n_matched, 4) if n_matched else 0.0,
                     "tp": tp, "fp": fp, "fn": fn},
         "per_class": per_class,
-        # --- downstream good/bad: заполняется когда есть diff образца к эталону ---
-        # "defect_recall": ...,        # доля пойманных дефектов (по DEFECT_TYPES)
-        # "false_call_rate": ...,      # ложные NOK / общее число хороших образцов
-        # "escape_rate": ...,          # пропущенные NOK / общее число дефектных образцов
-        # "end_to_end_accuracy": ...,  # accuracy вердикта OK/NOK
-        "todo": "defect-level метрики добавляются после реализации downstream-сравнения с эталоном (§10 ТЗ)",
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Downstream good/bad: метрики вердикта (§10 ТЗ)
+# --------------------------------------------------------------------------- #
+
+def _match_defects(pred_defects: list[dict], gt_defects: list[dict]) -> tuple[int, int, int]:
+    """Жадный one-to-one матч предсказанных дефектов с GT по (type, class или id).
+
+    Возвращает (matched, fp, fn) — где matched = TP по дефектам.
+    """
+    used_p = [False] * len(pred_defects)
+    matched = 0
+    for g in gt_defects:
+        gtype = g.get("type")
+        gid = g.get("ref_id")
+        gcls = g.get("ref_class")
+        for i, p in enumerate(pred_defects):
+            if used_p[i]:
+                continue
+            if p.get("type") != gtype:
+                continue
+            if (gid is not None and (p.get("component_id") == gid)) or \
+               (gcls is not None and (p.get("cls") == gcls)) or \
+               (gid is None and gcls is None):
+                used_p[i] = True
+                matched += 1
+                break
+    fp = sum(1 for u in used_p if not u)
+    fn = len(gt_defects) - matched
+    return matched, fp, fn
+
+
+def evaluate_verdicts(cases_path: str, golden_path: str, policy_overrides: dict | None = None) -> dict:
+    """Прогнать compare() на симулированных/реальных кейсах и посчитать метрики вердикта.
+
+    cases_path: JSONL со строками {"sample": <описание-схема>, "gt_defects": [...], "label": "OK"|"NOK"}
+                (см. pcba/inject_defects.py — либо реальные размеченные образцы в том же виде).
+    golden_path: JSON эталона (pcba.golden build).
+    """
+    # импорт здесь, чтобы eval.metrics оставался импортируемым без пакета pcba в окружениях анализа
+    from pcba.golden import GoldenBoard
+    from pcba.compare import compare, ComparePolicy
+
+    with open(golden_path, "r", encoding="utf-8") as f:
+        golden = GoldenBoard.from_json(json.load(f))
+    policy = ComparePolicy(**(policy_overrides or {}))
+
+    n = 0
+    n_good = n_bad = 0
+    e2e_correct = 0
+    false_calls = 0          # label OK, verdict NOK
+    escapes = 0              # label NOK, verdict OK
+    d_tp = d_fp = d_fn = 0
+    type_stat: dict = defaultdict(lambda: {"tp": 0, "fn": 0})
+
+    with open(cases_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            case = json.loads(line)
+            sample = case["sample"]
+            gt_defects = case.get("gt_defects", [])
+            label = case.get("label") or ("NOK" if gt_defects else "OK")
+            res = compare(sample, golden, policy)
+            pred_defects = [d.__dict__ if hasattr(d, "__dict__") else d for d in res.defects]
+            n += 1
+            if label == "OK":
+                n_good += 1
+                if res.verdict == "NOK":
+                    false_calls += 1
+            else:
+                n_bad += 1
+                if res.verdict == "OK":
+                    escapes += 1
+            if res.verdict == label:
+                e2e_correct += 1
+            m, fp, fn = _match_defects(pred_defects, gt_defects)
+            d_tp += m
+            d_fp += fp
+            d_fn += fn
+            # per-type recall
+            # (повторный лёгкий матч для статистики по типам)
+            used = [False] * len(pred_defects)
+            for g in gt_defects:
+                hit = False
+                for i, p in enumerate(pred_defects):
+                    if used[i] or p.get("type") != g.get("type"):
+                        continue
+                    if (g.get("ref_id") and p.get("component_id") == g.get("ref_id")) or \
+                       (g.get("ref_class") and p.get("cls") == g.get("ref_class")) or \
+                       (not g.get("ref_id") and not g.get("ref_class")):
+                        used[i] = True
+                        hit = True
+                        break
+                type_stat[g.get("type")]["tp" if hit else "fn"] += 1
+
+    defect_recall = d_tp / (d_tp + d_fn) if (d_tp + d_fn) else 0.0
+    defect_precision = d_tp / (d_tp + d_fp) if (d_tp + d_fp) else 0.0
+    return {
+        "n_cases": n, "n_good": n_good, "n_bad": n_bad,
+        "end_to_end_accuracy": round(e2e_correct / n, 4) if n else 0.0,
+        "false_call_rate": round(false_calls / n_good, 4) if n_good else 0.0,
+        "escape_rate": round(escapes / n_bad, 4) if n_bad else 0.0,
+        "defect_recall": round(defect_recall, 4),
+        "defect_precision": round(defect_precision, 4),
+        "defect_tp": d_tp, "defect_fp": d_fp, "defect_fn": d_fn,
+        "per_defect_type": {t: {"recall": round(v["tp"] / (v["tp"] + v["fn"]), 4) if (v["tp"] + v["fn"]) else 0.0,
+                                "tp": v["tp"], "fn": v["fn"]} for t, v in type_stat.items()},
     }
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--pred", required=True, help="JSONL предсказаний (объекты схемы или Sa2VA-сэмплы)")
-    ap.add_argument("--gt", required=True, help="JSONL ground truth (то же)")
-    ap.add_argument("--iou", type=float, default=0.5)
-    ap.add_argument("--polygon", action="store_true", help="матчить по полигонам (требует shapely)")
+    ap = argparse.ArgumentParser(description="PCBA model evaluation")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    s = sub.add_parser("seg", help="метрики сегментации/классификации (pred vs gt)")
+    s.add_argument("--pred", required=True, help="JSONL предсказаний (объекты схемы или Sa2VA-сэмплы)")
+    s.add_argument("--gt", required=True, help="JSONL ground truth (то же)")
+    s.add_argument("--iou", type=float, default=0.5)
+    s.add_argument("--polygon", action="store_true", help="матчить по полигонам (требует shapely)")
+
+    v = sub.add_parser("verdicts", help="метрики вердикта good/bad (compare() vs golden)")
+    v.add_argument("--cases", required=True, help='JSONL: {"sample":..., "gt_defects":[...], "label":"OK|NOK"}')
+    v.add_argument("--golden", required=True, help="JSON эталона (pcba.golden build)")
+
     args = ap.parse_args()
-    res = evaluate(args.pred, args.gt, args.iou, args.polygon)
+    if args.cmd == "seg":
+        res = evaluate(args.pred, args.gt, args.iou, args.polygon)
+    else:
+        res = evaluate_verdicts(args.cases, args.golden)
     print(json.dumps(res, ensure_ascii=False, indent=2))
 
 
