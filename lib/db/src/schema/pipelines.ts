@@ -31,7 +31,10 @@ export const pipelineNodes = pgTable("pipeline_nodes", {
 
 export const consultations = pgTable("consultations", {
   id: serial("id").primaryKey(),
-  pipelineId: integer("pipeline_id").notNull().references(() => pipelines.id, { onDelete: "cascade" }),
+  // pipelineId is nullable because RoboQC inspection-triggered HITL flows
+  // have no parent pipeline. The existing pipeline-driven path always
+  // supplies it; downstream consumers must tolerate the null.
+  pipelineId: integer("pipeline_id").references(() => pipelines.id, { onDelete: "cascade" }),
   nodeId: text("node_id").notNull(),
   approvalId: text("approval_id").notNull().unique(),
   functionName: text("function_name").notNull(),

@@ -346,28 +346,31 @@ router.post("/consultations/:approvalId/respond", async (req, res): Promise<void
     .where(eq(consultations.approvalId, params.data.approvalId))
     .returning();
 
-  // Update the node status accordingly
-  const nodeStatus = body.data.decision === "approve" ? "RESOLVED" : "NEEDS_CLARIFICATION";
-  await db
-    .update(pipelineNodes)
-    .set({
-      status: nodeStatus,
-      output: body.data.feedback ?? (body.data.decision === "approve" ? "Approved by operator" : "Rejected by operator"),
-      executedAt: new Date(),
-    })
-    .where(
-      eq(pipelineNodes.pipelineId, consultation.pipelineId),
-    );
+  // pipelineId is nullable: inspection-driven consultations (POST /api/inspections)
+  // have no parent pipeline, so the node/pipeline updates below only apply
+  // to pipeline-driven consultations.
+  const pipelineId = consultation.pipelineId;
+  if (pipelineId !== null) {
+    const nodeStatus = body.data.decision === "approve" ? "RESOLVED" : "NEEDS_CLARIFICATION";
+    await db
+      .update(pipelineNodes)
+      .set({
+        status: nodeStatus,
+        output: body.data.feedback ?? (body.data.decision === "approve" ? "Approved by operator" : "Rejected by operator"),
+        executedAt: new Date(),
+      })
+      .where(eq(pipelineNodes.pipelineId, pipelineId));
 
-  // If approved, update pipeline resolved count
-  if (body.data.decision === "approve") {
-    const [pipeline] = await db.select().from(pipelines).where(eq(pipelines.id, consultation.pipelineId));
-    if (pipeline) {
-      await db.update(pipelines).set({
-        resolvedCount: pipeline.resolvedCount + 1,
-        status: "pending",
-        updatedAt: new Date(),
-      }).where(eq(pipelines.id, consultation.pipelineId));
+    // If approved, update pipeline resolved count
+    if (body.data.decision === "approve") {
+      const [pipeline] = await db.select().from(pipelines).where(eq(pipelines.id, pipelineId));
+      if (pipeline) {
+        await db.update(pipelines).set({
+          resolvedCount: pipeline.resolvedCount + 1,
+          status: "pending",
+          updatedAt: new Date(),
+        }).where(eq(pipelines.id, pipelineId));
+      }
     }
   }
 

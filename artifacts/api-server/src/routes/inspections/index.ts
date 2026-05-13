@@ -1,6 +1,13 @@
 import { Router, type IRouter } from "express";
+import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { db, inspections, insertInspectionSchema, type InsertInspection } from "@workspace/db";
+import {
+  db,
+  inspections,
+  consultations,
+  insertInspectionSchema,
+  type InsertInspection,
+} from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -24,10 +31,9 @@ type InspectionResultBody = {
 };
 
 // HITL threshold for borderline confidence. Anything below this OR
-// with requires_hitl=true is flagged for QC engineer review. The
-// actual consultations row is created by a downstream worker because
-// the existing consultations table requires a pipelineId — we keep
-// the inspection itself decoupled from that constraint.
+// with requires_hitl=true creates a consultations row for the QC
+// engineer console. The consultations table's pipelineId is now
+// nullable so inspections-driven HITL works without a parent pipeline.
 const HITL_CONFIDENCE_THRESHOLD = 0.85;
 
 function parseBody(raw: unknown): InspectionResultBody | string {
@@ -53,6 +59,15 @@ function parseBody(raw: unknown): InspectionResultBody | string {
   };
 }
 
+function formatConsultationMessage(body: InspectionResultBody): string {
+  const summary = body.defects
+    ?.map((d) => `${d.defect_class}@${d.confidence.toFixed(2)}`)
+    .join(", ");
+  return `RoboQC borderline inspection ${body.inspection_id} ` +
+    `(model=${body.model_version}, confidence=${body.confidence.toFixed(2)})` +
+    (summary ? `: ${summary}` : "");
+}
+
 router.post("/inspections", async (req, res): Promise<void> => {
   const parsed = parseBody(req.body);
   if (typeof parsed === "string") {
@@ -60,6 +75,29 @@ router.post("/inspections", async (req, res): Promise<void> => {
     return;
   }
   const needsHitl = parsed.requires_hitl === true || parsed.confidence < HITL_CONFIDENCE_THRESHOLD;
+
+  let consultationId: number | null = null;
+  if (needsHitl) {
+    const [consultation] = await db
+      .insert(consultations)
+      .values({
+        pipelineId: null,
+        nodeId: "inspection",
+        approvalId: randomUUID(),
+        functionName: `roboqc_inspect:${parsed.model_version}`,
+        arguments: JSON.stringify({
+          inspection_id: parsed.inspection_id,
+          image_uri: parsed.image_uri,
+          confidence: parsed.confidence,
+          defects: parsed.defects ?? [],
+        }),
+        message: formatConsultationMessage(parsed),
+        status: "PENDING",
+      })
+      .returning();
+    consultationId = consultation?.id ?? null;
+  }
+
   const payload: InsertInspection = insertInspectionSchema.parse({
     inspectionId: parsed.inspection_id,
     imageUri: parsed.image_uri,
@@ -68,10 +106,14 @@ router.post("/inspections", async (req, res): Promise<void> => {
     modelVersion: parsed.model_version,
     requiresHitl: needsHitl,
     defects: parsed.defects ?? [],
-    hitlConsultationId: null,
+    hitlConsultationId: consultationId,
   });
   const [row] = await db.insert(inspections).values(payload).returning();
-  res.status(201).json({ inspection: row, hitl_routed: needsHitl });
+  res.status(201).json({
+    inspection: row,
+    hitl_routed: needsHitl,
+    consultation_id: consultationId,
+  });
 });
 
 router.get("/inspections/:inspectionId", async (req, res): Promise<void> => {
