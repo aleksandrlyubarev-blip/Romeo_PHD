@@ -3,6 +3,11 @@
 > **ТЗ Phase 0.1.** Fill before 31.05.2026. Shared cross-repo template with
 > Andrew-Analitic; PinoCut-specific rows here track the text sub-agents that
 > Phase 2.3 will migrate (Script, Visual Prompt, Consistency).
+>
+> **Related.** The 15.06 auth flip procedure lives in the Andrew-Analitic
+> repo as `notebooks/anthropic-migration/auth_flip_runbook.md` — the same
+> document covers both repos. PinoCut-specific wiring decisions are
+> recorded there under § 3.2.
 
 ## M1 — Monthly Anthropic API spend (May 2026)
 
