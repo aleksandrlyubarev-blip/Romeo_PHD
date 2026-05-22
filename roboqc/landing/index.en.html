@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RoboQC — quality control from NPI to scale | NVLabs · RomeoFlexVision</title>
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --panel: #111726;
+    --line: #1f2a3f;
+    --ink: #e8edf6;
+    --muted: #8b97ab;
+    --cyan: #22d3ee;
+    --lime: #a3e635;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+  a { color: var(--cyan); text-decoration: none; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  /* RomeoFlexVision header */
+  .site-header {
+    border-bottom: 1px solid var(--line);
+    background: rgba(10,14,26,0.9);
+  }
+  .site-header .wrap {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-top: 16px; padding-bottom: 16px;
+  }
+  .brand { font-weight: 700; letter-spacing: 0.5px; font-size: 18px; }
+  .brand span { color: var(--cyan); }
+  .nav a { color: var(--muted); margin-left: 22px; font-size: 14px; }
+  .nav a.active { color: var(--ink); }
+
+  /* NVLabs context strip */
+  .nvlabs-strip {
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    font-size: 13px; color: var(--muted);
+  }
+  .nvlabs-strip .wrap { padding: 10px 24px; }
+  .nvlabs-tag {
+    display: inline-block; color: var(--lime); font-weight: 700;
+    border: 1px solid var(--lime); border-radius: 4px;
+    padding: 1px 7px; margin-right: 10px; font-size: 12px;
+  }
+
+  /* Hero */
+  .hero { padding: 80px 0 64px; }
+  .hero h1 { font-size: 46px; line-height: 1.15; font-weight: 800; max-width: 760px; }
+  .hero h1 .accent { color: var(--cyan); }
+  .hero p.lead { color: var(--muted); font-size: 19px; margin-top: 20px; max-width: 620px; }
+  .cta-row { margin-top: 32px; }
+  .btn {
+    display: inline-block; padding: 13px 26px; border-radius: 6px;
+    font-weight: 700; font-size: 15px;
+  }
+  .btn-primary { background: var(--cyan); color: #04121a; }
+  .btn-ghost { border: 1px solid var(--line); color: var(--ink); margin-left: 12px; }
+
+  figure { margin: 48px 0; }
+  figure img { width: 100%; border-radius: 10px; border: 1px solid var(--line); display: block; }
+  figcaption { color: var(--muted); font-size: 13px; margin-top: 10px; text-align: center; }
+
+  section { padding: 56px 0; border-top: 1px solid var(--line); }
+  h2 { font-size: 30px; font-weight: 800; margin-bottom: 8px; }
+  .section-sub { color: var(--muted); margin-bottom: 32px; }
+
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+  .step {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 22px;
+  }
+  .step .num { color: var(--cyan); font-weight: 800; font-size: 14px; }
+  .step h3 { font-size: 17px; margin: 8px 0 6px; }
+  .step p { color: var(--muted); font-size: 14px; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 22px;
+  }
+  .card h3 { font-size: 17px; margin-bottom: 6px; }
+  .card p { color: var(--muted); font-size: 14px; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  th { color: var(--cyan); font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
+  td.tech { color: var(--lime); font-weight: 600; white-space: nowrap; }
+
+  .final-cta { text-align: center; }
+  .final-cta h2 { font-size: 34px; }
+  .final-cta p { color: var(--muted); margin: 10px 0 28px; }
+
+  footer {
+    border-top: 1px solid var(--line); padding: 28px 0;
+    color: var(--muted); font-size: 13px;
+  }
+  footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+
+  @media (max-width: 760px) {
+    .hero h1 { font-size: 32px; }
+    .steps, .grid2 { grid-template-columns: 1fr; }
+    .nav { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <div class="brand">Romeo<span>FlexVision</span></div>
+    <nav class="nav">
+      <a href="#">Platform</a>
+      <a href="#">Solutions</a>
+      <a href="#" class="active">NVLabs</a>
+      <a href="#contact">Contact</a>
+    </nav>
+  </div>
+</header>
+
+<div class="nvlabs-strip">
+  <div class="wrap">
+    <span class="nvlabs-tag">NVLabs</span>
+    An experimental RomeoFlexVision initiative. RoboQC is an early-access product.
+  </div>
+</div>
+
+<main>
+
+  <div class="hero wrap">
+    <h1>RoboQC — quality control <span class="accent">from NPI to scale</span></h1>
+    <p class="lead">Start manually. Scale automatically. A handheld error scanner
+      collects data from the first day of a product launch — and by the time you
+      reach volume, automated inspection is already trained on your defects.</p>
+    <div class="cta-row">
+      <a href="#contact" class="btn btn-primary">Request a demo</a>
+      <a href="#how" class="btn btn-ghost">How it works</a>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <figure>
+      <img src="../visuals/roboqc-scanner.png" alt="RoboQC handheld error scanner in use during the NPI stage">
+      <figcaption>The RoboQC handheld error scanner — NVIDIA Jetson edge AI, guidance right in the operator's hand.</figcaption>
+    </figure>
+  </div>
+
+  <section id="problem" class="wrap">
+    <h2>The NPI trap</h2>
+    <p class="section-sub">New-product introduction is exactly when quality control matters most — and when the data to run it doesn't exist yet.</p>
+    <div class="grid2">
+      <div class="card">
+        <h3>Manual inspection doesn't scale</h3>
+        <p>Slow, subjective, and unable to keep up with rising volume. Defects reach the customer in early production.</p>
+      </div>
+      <div class="card">
+        <h3>Auto-inspection has nothing to learn from</h3>
+        <p>CV models need thousands of defect examples. At NPI they physically don't exist — so automation never starts.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="how" class="wrap">
+    <h2>How RoboQC works</h2>
+    <p class="section-sub">Manual inspection at NPI becomes the training data for automation at scale.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="num">01</div>
+        <h3>Scan</h3>
+        <p>The operator inspects a part with the handheld scanner. Every check is a labeled example: photo, zone, defect type.</p>
+      </div>
+      <div class="step">
+        <div class="num">02</div>
+        <h3>Accumulate</h3>
+        <p>The defect library grows on its own, inside normal work — no separate labeling project.</p>
+      </div>
+      <div class="step">
+        <div class="num">03</div>
+        <h3>Synthesize</h3>
+        <p>Rare defects are synthesized in NVIDIA Omniverse — the NPI data gap is closed.</p>
+      </div>
+      <div class="step">
+        <div class="num">04</div>
+        <h3>Automate</h3>
+        <p>By the time you reach volume, inline RoboQC cameras inspect the stream automatically.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <figure>
+      <img src="../visuals/roboqc-dashboard.png" alt="RoboQC platform dashboard: defect library and NPI-to-scale progress">
+      <figcaption>The RoboQC platform — defect library and progress from NPI toward automated inspection at scale.</figcaption>
+    </figure>
+  </div>
+
+  <section id="tech" class="wrap">
+    <h2>The full NVIDIA computer-vision stack</h2>
+    <p class="section-sub">RoboQC is built on NVIDIA's end-to-end CV stack — from the edge device to inline analytics.</p>
+    <table>
+      <thead><tr><th>Stage</th><th>Technology</th><th>What it delivers</th></tr></thead>
+      <tbody>
+        <tr><td>Handheld scanner at NPI</td><td class="tech">Jetson</td><td>Zone highlighting and defect tagging in the operator's hand</td></tr>
+        <tr><td>Data scarcity</td><td class="tech">Omniverse Replicator</td><td>Synthetic rare defects</td></tr>
+        <tr><td>Model training</td><td class="tech">TAO Toolkit</td><td>Detection trained on real + synthetic defects</td></tr>
+        <tr><td>Defect understanding</td><td class="tech">VLM / NIM</td><td>Classification without full manual labeling</td></tr>
+        <tr><td>Auto-inspection at volume</td><td class="tech">Metropolis + DeepStream</td><td>Inline inspection of the part stream</td></tr>
+        <tr><td>Inference speed</td><td class="tech">TensorRT</td><td>Inspection at line speed</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="contact" class="wrap final-cta">
+    <h2>Quality control that grows with production</h2>
+    <p>RoboQC is an NVLabs initiative. Closed early access for electronics contract manufacturers.</p>
+    <a href="mailto:hello@romeoflexvision.com?subject=RoboQC%20demo" class="btn btn-primary">Request a demo</a>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div>RoboQC — an <strong>NVLabs</strong> initiative, part of RomeoFlexVision.</div>
+    <div>Project name is provisional. © 2026 RomeoFlexVision.</div>
+  </div>
+</footer>
+
+</body>
+</html>
