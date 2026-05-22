@@ -17,10 +17,12 @@ roboqc/
 │   ├── concept.md         # концепция: проблема, решение, клиенты, дорожная карта
 │   ├── architecture.md    # путь NPI → масштаб и стек NVIDIA (Mermaid-диаграммы)
 │   ├── ad-script.md       # сценарий рекламного ролика (~80 сек), RU
-│   └── ad-script.en.md    # тот же сценарий, EN — для питча инвесторам
+│   ├── ad-script.en.md    # тот же сценарий, EN — для питча инвесторам
+│   └── ad-script.he.md    # тот же сценарий, HE (иврит)
 ├── landing/
 │   ├── index.html         # лендинг-раздел RomeoFlexVision / NVLabs, RU
-│   └── index.en.html      # тот же лендинг, EN — для питча инвесторам
+│   ├── index.en.html      # тот же лендинг, EN — для питча инвесторам
+│   └── index.he.html      # тот же лендинг, HE (иврит, RTL)
 └── visuals/
     ├── roboqc-dashboard.png   # мокап интерфейса
     └── roboqc-scanner.png     # ручной сканер ошибок в работе
