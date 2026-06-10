@@ -1,4 +1,9 @@
-export type BuxterTemplateId = "buxter-sprint-1" | "buxter-sprint-2" | "buxter-sprint-3" | "buxter-full-mas";
+export type BuxterTemplateId =
+  | "buxter-sprint-1"
+  | "buxter-sprint-2"
+  | "buxter-sprint-3"
+  | "buxter-full-mas"
+  | "physics-engineer-rwdm";
 
 export type BuxterTemplate = {
   id: BuxterTemplateId;
@@ -177,6 +182,45 @@ nodes:
     depends_on: [solidworks_rpa_review]
     prompt: "Evaluate all prior outputs, execute the defined rollback path when failures or ambiguities are detected, and produce the final engineering report with risk status, handoff actions, and audit logs."`;
 
+const PHYSICS_ENGINEER_YAML = `name: Physics Engineer RWDM Dissertation
+description: Инженер-физик по теме диссертации — кинетика переноса поляризации в системе 8Li-6Li в LiF (бета-ЯМР, модель RWDM Джепарова)
+
+nodes:
+  - id: problem_intake
+    name: Постановка задачи
+    type: physics_problem_intake
+    prompt: "Нормализуй исследовательский запрос в структурированную физическую постановку: система (8Li-6Li в LiF), наблюдаемая величина P00(t), параметры (c, H0), ограничения, критерии успеха и явные неизвестные."
+
+  - id: theory_audit
+    name: Теоретический аудит
+    type: physics_theory
+    depends_on: [problem_intake]
+    prompt: "Проведи аудит теоретической базы задачи: кинетическое уравнение RWDM, дипольные скорости w_ij ~ (1-3cos^2 theta)^2 / r^6, асимметрия каналов xi=3, концентрационное разложение, формулы (9)-(12) работы ЯФ-2014. Зафиксируй применимые формулы, нормировки и конвенции префакторов."
+
+  - id: model_design
+    name: Дизайн RWDM-модели
+    type: physics_model_design
+    depends_on: [theory_audit]
+    prompt: "Спроектируй численную модель: ГЦК-подрешётка Li с PBC, генератор A с нулевыми суммами столбцов, каналы 8Li-6Li и 6Li-6Li, локальные дипольные поля, функция согласования частот g(domega). Укажи параметры из статьи для заданных c и H0."
+
+  - id: simulation_plan
+    name: План вычислений
+    type: physics_simulation
+    depends_on: [model_design]
+    prompt: "Составь вычислительный план: суперячейка + теорема Блоха (алгоритм Джепарова-Львова-Шестопала), размер ячейки, cutoff-радиусы, число конфигураций, сетка времени, GPU-батчинг. Определи критерии сходимости по N_d и числу конфигураций."
+
+  - id: validation_gate
+    name: Валидация против 9 кейсов
+    type: physics_validation
+    depends_on: [simulation_plan]
+    prompt: "Проверь результаты против P00(t) = F(t)*G(beta0*t) с табличными параметрами для девяти кейсов c x H0 из работы ЯФ-2014. Проанализируй известное расхождение 2005 г. в максимуме G(t) при c=0.1006, H0=200 Гс. Отдели физику от численных артефактов."
+
+  - id: research_report
+    name: Отчёт научному руководителю
+    type: physics_report
+    depends_on: [validation_gate]
+    prompt: "Сформируй отчёт в стиле отчёта научному руководителю: выполненная работа, согласие/расхождение с теорией и экспериментом, нерешённые вопросы, план следующего этапа (расширение сетки c x H0, NISQ-моделирование)."`;
+
 export const BUXTER_TEMPLATES: readonly BuxterTemplate[] = [
   {
     id: "buxter-sprint-1",
@@ -337,6 +381,49 @@ export const BUXTER_TEMPLATES: readonly BuxterTemplate[] = [
       },
     ],
     handoff: "Full MAS handoff targets production review and governed automation rollout.",
+  },
+  {
+    id: "physics-engineer-rwdm",
+    name: "Physics Engineer RWDM Dissertation",
+    badge: "Physics",
+    sprint: "Research",
+    status: "active",
+    nextFocus: "Воспроизвести девять кейсов c × H₀ из ЯФ-2014 и перепроверить расхождение 2005 г. в максимуме G(t).",
+    summary:
+      "Инженер-физик по теме диссертации: β-ЯМР и кинетика переноса поляризации в неупорядоченной системе ⁸Li–⁶Li в LiF, численное моделирование RWDM по Джепарову.",
+    yaml: PHYSICS_ENGINEER_YAML,
+    deliverables: [
+      "Структурированная физическая постановка",
+      "Аудит формул (9)–(12) и конвенций",
+      "Дизайн RWDM-модели (FCC + PBC)",
+      "Вычислительный план (суперячейка + Блох)",
+      "Валидация против 9 кейсов c × H₀",
+      "Отчёт научному руководителю",
+    ],
+    tooling: ["RWDM-теоретик", "Дизайнер кинетической модели", "Валидатор против эксперимента"],
+    qualityGates: [
+      "Нулевые суммы столбцов генератора A",
+      "Сходимость по N_d и конфигурациям",
+      "Согласие с P₀₀(t) = F(t)·G(β₀t)",
+    ],
+    phases: [
+      {
+        title: "Теория и постановка",
+        owner: "Physics engineer",
+        outcome: "Зафиксировать кинетическое уравнение, дипольные скорости, асимметрию каналов ξ=3 и применимые формулы статьи.",
+      },
+      {
+        title: "Модель и вычисления",
+        owner: "Physics engineer",
+        outcome: "Спроектировать ГЦК-модель с PBC и план суперячейки/конфигураций с контролем сходимости.",
+      },
+      {
+        title: "Валидация и отчёт",
+        owner: "Physics engineer",
+        outcome: "Сверить с табличными кейсами ЯФ-2014, проанализировать расхождение 2005 г. и подготовить отчёт руководителю.",
+      },
+    ],
+    handoff: "Выход — верифицированная RWDM-модель и план расширения за пределы сетки 2014 г. (новые c, H₀, NISQ).",
   },
 ] as const;
 

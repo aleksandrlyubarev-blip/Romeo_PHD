@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pipelines, pipelineNodes, consultations, telemetryEvents } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { resolvePersonaForNodeType } from "./agent-personas";
 
 async function logTelemetry(
   pipelineId: number,
@@ -37,6 +38,8 @@ async function executeNodeWithLLM(
           .join("\n")}`
       : "";
 
+  const persona = resolvePersonaForNodeType(nodeType);
+
   const systemPrompt = `You are an AI worker in a pipeline execution system called Romeo PHD v6.0.
 You process pipeline nodes deterministically. For each node, you:
 1. Execute the task described in the prompt
@@ -52,8 +55,8 @@ Your response MUST be a valid JSON object with these fields:
 
 Status rules:
 - RESOLVED (confidence >= 0.8): Task completed with high confidence
-- AMBIGUOUS (0.6 <= confidence < 0.8): Multiple valid interpretations, needs human review  
-- NEEDS_CLARIFICATION (confidence < 0.6): Insufficient information, requires operator input`;
+- AMBIGUOUS (0.6 <= confidence < 0.8): Multiple valid interpretations, needs human review
+- NEEDS_CLARIFICATION (confidence < 0.6): Insufficient information, requires operator input${persona ? `\n\n${persona}` : ""}`;
 
   const userMessage = `Node: "${nodeName}" (type: ${nodeType})
 Task: ${prompt ?? `Execute the ${nodeType} task for node: ${nodeName}`}${contextStr}
