@@ -1,0 +1,13 @@
+round,edit,surface,delta_held_in,delta_held_out,accepted,reason
+1,enforce_output_schema,strict_output_schema,0.0767,0.0667,True,improves without regression
+1,enable_glare_retry,glare_retry_policy,0.05,0.05,True,improves without regression
+1,add_fewshot:cold_joint,fewshot_defects,0.0417,0.0433,True,improves without regression
+1,add_fewshot:tombstone,fewshot_defects,0.0433,0.055,True,improves without regression
+1,add_step_budget_guard,step_budget_guard,0.03,0.0217,True,improves without regression
+1,add_fewshot:missing_component,fewshot_defects,0.045,0.0417,True,improves without regression
+1,enable_cross_view,cross_view_on_connectors,0.01,0.025,True,improves without regression
+1,enable_self_verification,self_verification,0.02,0.0183,True,improves without regression
+1,paranoid_reject_everything,paranoid_reject,-0.0467,-0.035,False,regression on a split
+1,add_generic_caution_instruction,generic_caution,0.0,0.0,False,no measurable improvement
+2,paranoid_reject_everything,paranoid_reject,-0.0533,-0.0667,False,regression on a split
+2,add_generic_caution_instruction,generic_caution,0.0,0.0,False,no measurable improvement

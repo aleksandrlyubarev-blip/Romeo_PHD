@@ -1,0 +1,208 @@
+{
+  "paper": "Self-Harness (arXiv:2606.09498)",
+  "seed": 42,
+  "n_tasks": 1200,
+  "baseline": {
+    "held_in": 0.5633,
+    "held_out": 0.5333
+  },
+  "final": {
+    "held_in": 0.9267,
+    "held_out": 0.915
+  },
+  "final_harness": {
+    "fewshot_defects": [
+      "cold_joint",
+      "missing_component",
+      "solder_bridge",
+      "tombstone"
+    ],
+    "strict_output_schema": true,
+    "glare_retry_policy": true,
+    "cross_view_on_connectors": true,
+    "self_verification": true,
+    "step_budget_guard": true,
+    "paranoid_reject": false,
+    "generic_caution": false
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "mined_signatures": [
+        {
+          "signature": "format_error/output_schema_drift/any",
+          "count": 63
+        },
+        {
+          "signature": "missed_defect/glare_degradation/lighting=glare",
+          "count": 55
+        },
+        {
+          "signature": "missed_defect/no_fewshot_coverage/defect=cold_joint",
+          "count": 34
+        },
+        {
+          "signature": "missed_defect/no_fewshot_coverage/defect=tombstone",
+          "count": 30
+        },
+        {
+          "signature": "timeout/unbounded_reinspect_loop/loop_prone=true",
+          "count": 25
+        },
+        {
+          "signature": "missed_defect/no_fewshot_coverage/defect=missing_component",
+          "count": 25
+        },
+        {
+          "signature": "false_positive/connector_ambiguity/zone=connector",
+          "count": 14
+        },
+        {
+          "signature": "false_positive/hallucinated_defect/zone=generic",
+          "count": 12
+        },
+        {
+          "signature": "missed_defect/residual_classifier_miss/defect=solder_bridge",
+          "count": 6
+        }
+      ],
+      "verdicts": [
+        {
+          "edit": "enforce_output_schema",
+          "target": "format_error/output_schema_drift/any",
+          "surface": "strict_output_schema",
+          "delta_held_in": 0.0767,
+          "delta_held_out": 0.0667,
+          "accepted": true,
+          "reason": "improves without regression"
+        },
+        {
+          "edit": "enable_glare_retry",
+          "target": "missed_defect/glare_degradation/lighting=glare",
+          "surface": "glare_retry_policy",
+          "delta_held_in": 0.05,
+          "delta_held_out": 0.05,
+          "accepted": true,
+          "reason": "improves without regression"
+        },
+        {
+          "edit": "add_fewshot:cold_joint",
+          "target": "missed_defect/no_fewshot_coverage/defect=cold_joint",
+          "surface": "fewshot_defects",
+          "delta_held_in": 0.0417,
+          "delta_held_out": 0.0433,
+          "accepted": true,
+          "reason": "improves without regression"
+        },
+        {
+          "edit": "add_fewshot:tombstone",
+          "target": "missed_defect/no_fewshot_coverage/defect=tombstone",
+          "surface": "fewshot_defects",
+          "delta_held_in": 0.0433,
+          "delta_held_out": 0.055,
+          "accepted": true,
+          "reason": "improves without regression"
+        },
+        {
+          "edit": "add_step_budget_guard",
+          "target": "timeout/unbounded_reinspect_loop/loop_prone=true",
+          "surface": "step_budget_guard",
+          "delta_held_in": 0.03,
+          "delta_held_out": 0.0217,
+          "accepted": true,
+          "reason": "improves without regression"
+        },
+        {
+          "edit": "add_fewshot:missing_component",
+          "target": "missed_defect/no_fewshot_coverage/defect=missing_component",
+          "surface": "fewshot_defects",
+          "delta_held_in": 0.045,
+          "delta_held_out": 0.0417,
+          "accepted": true,
+          "reason": "improves without regression"
+        },
+        {
+          "edit": "enable_cross_view",
+          "target": "false_positive/connector_ambiguity/zone=connector",
+          "surface": "cross_view_on_connectors",
+          "delta_held_in": 0.01,
+          "delta_held_out": 0.025,
+          "accepted": true,
+          "reason": "improves without regression"
+        },
+        {
+          "edit": "enable_self_verification",
+          "target": "false_positive/hallucinated_defect/zone=generic",
+          "surface": "self_verification",
+          "delta_held_in": 0.02,
+          "delta_held_out": 0.0183,
+          "accepted": true,
+          "reason": "improves without regression"
+        },
+        {
+          "edit": "paranoid_reject_everything",
+          "target": "missed_defect/* (overreach)",
+          "surface": "paranoid_reject",
+          "delta_held_in": -0.0467,
+          "delta_held_out": -0.035,
+          "accepted": false,
+          "reason": "regression on a split"
+        },
+        {
+          "edit": "add_generic_caution_instruction",
+          "target": "any (vague)",
+          "surface": "generic_caution",
+          "delta_held_in": 0.0,
+          "delta_held_out": 0.0,
+          "accepted": false,
+          "reason": "no measurable improvement"
+        }
+      ],
+      "pass_rate_held_in": 0.9267,
+      "pass_rate_held_out": 0.915
+    },
+    {
+      "round": 2,
+      "mined_signatures": [
+        {
+          "signature": "missed_defect/residual_classifier_miss/defect=missing_component",
+          "count": 13
+        },
+        {
+          "signature": "missed_defect/residual_classifier_miss/defect=cold_joint",
+          "count": 11
+        },
+        {
+          "signature": "missed_defect/residual_classifier_miss/defect=solder_bridge",
+          "count": 10
+        },
+        {
+          "signature": "missed_defect/residual_classifier_miss/defect=tombstone",
+          "count": 9
+        }
+      ],
+      "verdicts": [
+        {
+          "edit": "paranoid_reject_everything",
+          "target": "missed_defect/* (overreach)",
+          "surface": "paranoid_reject",
+          "delta_held_in": -0.0533,
+          "delta_held_out": -0.0667,
+          "accepted": false,
+          "reason": "regression on a split"
+        },
+        {
+          "edit": "add_generic_caution_instruction",
+          "target": "any (vague)",
+          "surface": "generic_caution",
+          "delta_held_in": 0.0,
+          "delta_held_out": 0.0,
+          "accepted": false,
+          "reason": "no measurable improvement"
+        }
+      ],
+      "pass_rate_held_in": 0.9267,
+      "pass_rate_held_out": 0.915
+    }
+  ]
+}
