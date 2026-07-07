@@ -1,4 +1,7 @@
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { isRateLimitError } from "@workspace/integrations-anthropic-ai/batch";
+import { generateWithRetry as generateGoogleWithRetry } from "@workspace/integrations-google-ai";
+import { generateWithRetry as generatePerplexityWithRetry } from "@workspace/integrations-perplexity-ai";
 import { MODELS, type ModelRoute, type Provider } from "./model-routing";
 
 /** Единый результат вызова любого провайдера — независимо от формата ответа. */
@@ -38,7 +41,31 @@ class AnthropicClient implements LLMClient {
         ...(opts?.effort ? { output_config: { effort: opts.effort } } : {}),
       });
 
-    let message = await request(route.model);
+    let message: Awaited<ReturnType<typeof request>>;
+    try {
+      message = await request(route.model);
+    } catch (error) {
+      // Worker-переполнение (env WORKER_OVERFLOW_PROVIDER=google): если на
+      // worker-маршруте (Haiku 4.5) исчерпаны ретраи SDK (maxRetries: 5, см.
+      // integrations-anthropic-ai/src/client.ts) и тир Anthropic упёрся в
+      // rate-limit, легально разгружаем запрос на Gemini Flash вместо
+      // накопления очереди/повторной подмены ключей (запрещено CLAUDE.md).
+      // Один узкий чек, один повтор — не усложняем.
+      if (
+        route.tier === "worker" &&
+        process.env.WORKER_OVERFLOW_PROVIDER === "google" &&
+        isRateLimitError(error)
+      ) {
+        const overflowRoute: ModelRoute = {
+          ...route,
+          provider: MODELS.workerOverflow.provider,
+          model: MODELS.workerOverflow.model,
+        };
+        return getClientForProvider("google").complete(overflowRoute, systemPrompt, userMessage);
+      }
+      throw error;
+    }
+
     let servedBy = route.model;
 
     if (message.stop_reason === "refusal" && opts?.useRefusalFallback) {
@@ -62,15 +89,82 @@ class AnthropicClient implements LLMClient {
 }
 
 /**
- * Заглушка для провайдеров, интеграция которых ещё не подключена
- * (Google — Этап 2, Perplexity — Этап 3 плана `docs/plan-gemini-perplexity-computer-use.md`).
- * Бросает понятную ошибку вместо молчаливого падения на несуществующем клиенте.
+ * Google Gemini-клиент (Этап 2 плана `docs/plan-gemini-perplexity-computer-use.md`).
+ * Обслуживает две роли: architect-crosscheck (независимое второе мнение,
+ * gemini-3-pro-preview) и worker-overflow (перелив worker-нагрузки при
+ * исчерпании лимитов Anthropic, gemini-2.5-flash) — маршрут решает какая
+ * модель и параметры используются, клиент от роли не зависит.
  */
-class NotImplementedClient implements LLMClient {
-  constructor(private readonly providerName: string, private readonly stage: string) {}
+class GoogleClient implements LLMClient {
+  async complete(route: ModelRoute, systemPrompt: string, userMessage: string): Promise<LLMCompletion> {
+    const response = await generateGoogleWithRetry({
+      model: route.model,
+      contents: userMessage,
+      config: {
+        systemInstruction: systemPrompt,
+        maxOutputTokens: route.maxTokens,
+        ...(route.google?.thinkingBudget
+          ? { thinkingConfig: { thinkingBudget: route.google.thinkingBudget } }
+          : {}),
+      },
+    });
 
-  async complete(): Promise<LLMCompletion> {
-    throw new Error(`провайдер ${this.providerName} будет подключён на ${this.stage}`);
+    const candidate = response.candidates?.[0];
+
+    // Safety-block — единообразно с refusal Anthropic: text: null, refused: true.
+    // FinishReason — строковый enum SDK ("SAFETY" и т.д.); сравниваем строкой,
+    // чтобы не тянуть @google/genai в api-server напрямую (типы и так
+    // проверяются через ModelRoute/generateWithRetry из integrations-google-ai).
+    const safetyBlocked =
+      candidate?.finishReason === "SAFETY" || Boolean(response.promptFeedback?.blockReason);
+    if (safetyBlocked) {
+      return { text: null, model: route.model, refused: true };
+    }
+
+    // `response.text` — SDK-геттер, склеивающий текстовые part'ы первого
+    // кандидата мимо thought-блоков. Если по какой-то причине геттер не дал
+    // текста (например, ответ состоит только из non-text part'ов), собираем
+    // текст вручную тем же правилом (исключая part.thought).
+    let text = response.text ?? null;
+    if (!text) {
+      const parts = candidate?.content?.parts?.filter((part) => !part.thought && part.text) ?? [];
+      text = parts.length > 0 ? parts.map((part) => part.text).join("") : null;
+    }
+
+    return { text: text ?? null, model: route.model, refused: false };
+  }
+}
+
+/**
+ * Perplexity Sonar-клиент (Этап 3 плана). Цитаты дописываются в конец text
+ * блоком "Источники:", чтобы доехать до output узла без изменения интерфейса
+ * LLMCompletion — у Sonar нет отдельного message-блока для ссылок, только
+ * плоский текст ответа.
+ */
+class PerplexityClient implements LLMClient {
+  async complete(route: ModelRoute, systemPrompt: string, userMessage: string): Promise<LLMCompletion> {
+    const result = await generatePerplexityWithRetry({
+      model: route.model,
+      max_tokens: route.maxTokens,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      ...(route.perplexity?.searchMode === "academic" ? { search_mode: "academic" as const } : {}),
+    });
+
+    if (result.text === null) {
+      return { text: null, model: route.model, refused: true };
+    }
+
+    // Пустой список цитат — не ошибка (MANDATORY_NEGATIVE_RESULT_RULE
+    // допускает валидный негативный ответ "релевантных публикаций не найдено").
+    const text =
+      result.citations.length > 0
+        ? `${result.text}\n\nИсточники:\n${result.citations.map((url, i) => `[${i + 1}] ${url}`).join("\n")}`
+        : result.text;
+
+    return { text, model: route.model, refused: false };
   }
 }
 
@@ -88,10 +182,10 @@ export function getClientForProvider(provider: Provider): LLMClient {
       if (!anthropicClient) anthropicClient = new AnthropicClient();
       return anthropicClient;
     case "google":
-      if (!googleClient) googleClient = new NotImplementedClient("google", "Этапе 2");
+      if (!googleClient) googleClient = new GoogleClient();
       return googleClient;
     case "perplexity":
-      if (!perplexityClient) perplexityClient = new NotImplementedClient("perplexity", "Этапе 3");
+      if (!perplexityClient) perplexityClient = new PerplexityClient();
       return perplexityClient;
   }
 }

@@ -102,6 +102,25 @@ const WORKER_TYPE_PATTERNS = [
   /format/,
 ];
 
+/**
+ * Кросс-провайдерные роли (Этап 2/3 плана) — ортогональны трём Anthropic-ярусам,
+ * поэтому проверяются ДО ярусной логики в `resolveRouteForNodeType`, а не как
+ * очередной паттерн внутри ARCHITECT/WORKER списков.
+ *
+ * Порядок проверки важен: crosscheck → deep_research → research → ярусы.
+ *
+ * Ловушка с `research_report`: в пресете physics-engineer-rwdm
+ * (`artifacts/romeo-phd/src/lib/buxter.ts`) узел с id "research_report" имеет
+ * type "physics_report" (не "research_report") — он и так уходит на architect
+ * через `/^physics_/` и в паттерн ниже не попадает. Но паттерн `RESEARCH_TYPE_PATTERN`
+ * всё равно анкорим к началу строки с negative lookahead на "_report" (а не
+ * голым `/research/`), чтобы будущий узел с type, буквально совпадающим с id
+ * "research_report", не перехватился на manager+Perplexity вместо architect.
+ */
+const CROSSCHECK_TYPE_PATTERN = /^crosscheck_|second_opinion/;
+const DEEP_RESEARCH_TYPE_PATTERN = /^deep_research_/;
+const RESEARCH_TYPE_PATTERN = /^research_(?!report)|literature|websearch|arxiv/;
+
 export function resolveTierForNodeType(nodeType: string): AgentTier {
   const t = nodeType.toLowerCase();
   if (ARCHITECT_TYPE_PATTERNS.some((re) => re.test(t))) return "architect";
@@ -112,11 +131,44 @@ export function resolveTierForNodeType(nodeType: string): AgentTier {
 }
 
 /**
- * Маршруты на типы узлов пока покрывают только три Anthropic-яруса.
- * crosscheck/researcher — не типы узлов, а самостоятельные роли; их
- * подключение к паттернам узлов — Этап 2/3 плана, здесь не трогаем.
+ * Кросс-провайдерные роли проверяются раньше ярусной логики: crosscheck и
+ * research/deep_research — это отдельные узлы пайплайна, а не замена
+ * architect/manager/worker (см. комментарий у паттернов выше про порядок
+ * проверки и ловушку с `research_report`).
  */
 export function resolveRouteForNodeType(nodeType: string): ModelRoute {
+  const t = nodeType.toLowerCase();
+
+  if (CROSSCHECK_TYPE_PATTERN.test(t)) {
+    return {
+      tier: "architect",
+      provider: MODELS.crosscheck.provider,
+      model: MODELS.crosscheck.model,
+      maxTokens: 32000,
+      google: {},
+    };
+  }
+
+  if (DEEP_RESEARCH_TYPE_PATTERN.test(t)) {
+    return {
+      tier: "manager",
+      provider: MODELS.deepResearcher.provider,
+      model: MODELS.deepResearcher.model,
+      maxTokens: 16000,
+      perplexity: { searchMode: "web" },
+    };
+  }
+
+  if (RESEARCH_TYPE_PATTERN.test(t)) {
+    return {
+      tier: "manager",
+      provider: MODELS.researcher.provider,
+      model: MODELS.researcher.model,
+      maxTokens: 16000,
+      perplexity: { searchMode: "web" },
+    };
+  }
+
   const tier = resolveTierForNodeType(nodeType);
   switch (tier) {
     case "architect":
