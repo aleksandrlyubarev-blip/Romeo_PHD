@@ -1,15 +1,14 @@
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pipelines, pipelineNodes, consultations, telemetryEvents } from "@workspace/db";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { resolvePersonaForNodeType } from "./agent-personas";
 import {
-  MODELS,
   MANDATORY_NEGATIVE_RESULT_RULE,
   WORKER_TIER_RULES,
   resolveRouteForNodeType,
   type ModelRoute,
 } from "./model-routing";
+import { getClientForProvider } from "./llm-clients";
 
 async function logTelemetry(
   pipelineId: number,
@@ -32,6 +31,8 @@ interface NodeResult {
   consultationMessage?: string;
   /** Модель, фактически давшая ответ (с учётом refusal-fallback). */
   model: string;
+  /** Провайдер, фактически обслуживший запрос (anthropic | google | perplexity). */
+  provider: string;
   /** Ярус маршрутизации: architect | manager | worker. */
   tier: string;
   /** Время работы ИИ над узлом — главный сканер качества архитектуры. */
@@ -39,45 +40,19 @@ interface NodeResult {
 }
 
 /**
- * Один вызов модели по маршруту. Для architect-яруса (Fable 5) при
- * policy-отказе классификаторов (stop_reason: "refusal") запрос
- * повторяется на Opus 4.8 — иначе ложное срабатывание на безобидной
- * смежной теме валит весь пайплайн.
+ * Единственная точка привязки к конкретному вендору: диспетчер выбирает
+ * LLM-клиента по `route.provider` (`llm-clients.ts`) и делегирует ему вызов.
+ * Провайдер-специфичная логика (refusal-fallback, thinking-блоки, safety-block
+ * и т.д.) живёт внутри соответствующего клиента, а не здесь.
  */
 async function callModelWithRoute(
   route: ModelRoute,
   systemPrompt: string,
   userMessage: string
 ): Promise<{ text: string | null; model: string }> {
-  const request = (model: string) =>
-    anthropic.messages.create({
-      model,
-      max_tokens: route.maxTokens,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userMessage }],
-      // Fable 5: thinking всегда включён, параметр не передаётся вовсе.
-      // Haiku 4.5: adaptive thinking недоступен.
-      ...(route.sendAdaptiveThinking ? { thinking: { type: "adaptive" as const } } : {}),
-      // Haiku 4.5 не принимает effort — отправляем только там, где поддержано.
-      ...(route.effort ? { output_config: { effort: route.effort } } : {}),
-    });
-
-  let message = await request(route.model);
-  let servedBy = route.model;
-
-  if (message.stop_reason === "refusal" && route.useRefusalFallback) {
-    message = await request(MODELS.architectFallback);
-    servedBy = MODELS.architectFallback;
-  }
-
-  if (message.stop_reason === "refusal") {
-    return { text: null, model: servedBy };
-  }
-
-  // При включённом thinking первый блок может быть thinking-блоком —
-  // ищем текстовый блок, а не берём content[0].
-  const textBlock = message.content.find((b) => b.type === "text");
-  return { text: textBlock?.type === "text" ? textBlock.text : null, model: servedBy };
+  const client = getClientForProvider(route.provider);
+  const completion = await client.complete(route, systemPrompt, userMessage);
+  return { text: completion.text, model: completion.model };
 }
 
 /** Заглушки, которыми модель иногда подменяет реальный негативный ответ. */
@@ -138,7 +113,7 @@ Process this pipeline node and return your result as JSON.`;
   const startedAt = Date.now();
   const { text, model } = await callModelWithRoute(route, systemPrompt, userMessage);
   const durationMs = Date.now() - startedAt;
-  const routeMeta = { model, tier: route.tier, durationMs };
+  const routeMeta = { model, provider: route.provider, tier: route.tier, durationMs };
 
   if (text === null) {
     return {
@@ -292,6 +267,7 @@ export async function executePipeline(
         output: result.output,
         confidenceScore: result.confidenceScore,
         model: result.model,
+        provider: result.provider,
         tier: result.tier,
         durationMs: result.durationMs,
       });
@@ -300,6 +276,7 @@ export async function executePipeline(
         status: result.status,
         confidenceScore: result.confidenceScore,
         model: result.model,
+        provider: result.provider,
         tier: result.tier,
         // Время работы ИИ — сканер качества архитектуры: минуты — норма,
         // десятки минут на простом узле — красный флаг запутанного кода.

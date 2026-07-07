@@ -9,6 +9,17 @@
  * | manager    | claude-sonnet-5   | Оркестровка, валидация, синтез           | high      | high | 3 / 15                   |
  * | worker     | claude-haiku-4-5  | Грязная работа: логи, парсинг, извлечение | ok        | low  | 1 / 5                    |
  *
+ * Плюс кросс-провайдерные роли (Этап 1 плана `docs/plan-gemini-perplexity-computer-use.md`;
+ * сами маршруты на типы узлов подключаются на Этапах 2-3 — здесь пока только
+ * провайдер-агностичная структура и заготовки под них):
+ *
+ * | Роль          | Модель                   | Провайдер  | Назначение                                             |
+ * |---------------|--------------------------|------------|---------------------------------------------------------|
+ * | crosscheck    | gemini-3-pro-preview     | google     | независимое второе мнение по физике/спекам, 1M контекст  |
+ * | workerOverflow| gemini-2.5-flash         | google     | перелив worker-нагрузки при исчерпании лимитов Anthropic |
+ * | researcher    | sonar-pro                | perplexity | узлы с веб-поиском и цитатами                            |
+ * | deepResearcher| sonar-deep-research      | perplexity | дорогой глубокий ресёрч — точечно, аналог xhigh-effort   |
+ *
  * Правило маршрутизации: интеллект важнее вкуса, вкус важнее стоимости.
  * При сомнении узел уходит на ярус выше (default = manager), никогда — ниже.
  *
@@ -19,38 +30,54 @@
 
 export type AgentTier = "architect" | "manager" | "worker";
 
+/** Провайдер, обслуживающий маршрут. Диспетчер — `getClientForProvider` в `llm-clients.ts`. */
+export type Provider = "anthropic" | "google" | "perplexity";
+
 // SDK 0.78 типизирует effort без "xhigh"; при апгрейде SDK можно добавить.
 export type EffortLevel = "low" | "medium" | "high" | "max";
 
 export interface ModelRoute {
   tier: AgentTier;
+  provider: Provider;
   model: string;
   maxTokens: number;
-  /**
-   * `output_config.effort`. Не поддерживается на Haiku 4.5 — для worker
-   * остаётся undefined и параметр не отправляется вовсе (иначе 400).
-   */
-  effort?: EffortLevel;
-  /**
-   * Адаптивное мышление. На Fable 5 thinking всегда включён и параметр
-   * НЕ отправляется (явный disabled/enabled — это 400); на Sonnet 5
-   * adaptive включается явно; на Haiku 4.5 недоступен.
-   */
-  sendAdaptiveThinking: boolean;
-  /**
-   * Fallback на Opus 4.8 при policy-отказе классификаторов Fable 5
-   * (stop_reason: "refusal"): запрос повторяется на fallback-модели
-   * клиентской стороной. Только для architect-яруса.
-   */
-  useRefusalFallback: boolean;
+  /** Anthropic-специфичные параметры запроса — используются только когда `provider === "anthropic"`. */
+  anthropic?: {
+    /**
+     * `output_config.effort`. Не поддерживается на Haiku 4.5 — для worker
+     * остаётся undefined и параметр не отправляется вовсе (иначе 400).
+     */
+    effort?: EffortLevel;
+    /**
+     * Адаптивное мышление. На Fable 5 thinking всегда включён и параметр
+     * НЕ отправляется (явный disabled/enabled — это 400); на Sonnet 5
+     * adaptive включается явно; на Haiku 4.5 недоступен.
+     */
+    sendAdaptiveThinking: boolean;
+    /**
+     * Fallback на Opus 4.8 при policy-отказе классификаторов Fable 5
+     * (stop_reason: "refusal"): запрос повторяется на fallback-модели
+     * клиентской стороной. Только для architect-яруса.
+     */
+    useRefusalFallback: boolean;
+  };
+  /** Заготовка под Gemini (Этап 2) — thinking-бюджет для thinking-моделей Gemini. */
+  google?: { thinkingBudget?: number };
+  /** Заготовка под Perplexity Sonar (Этап 3) — режим поиска. */
+  perplexity?: { searchMode?: "web" | "academic" };
 }
 
 export const MODELS = {
-  architect: "claude-fable-5",
-  architectFallback: "claude-opus-4-8",
-  manager: "claude-sonnet-5",
-  worker: "claude-haiku-4-5",
-} as const;
+  architect: { provider: "anthropic", model: "claude-fable-5" },
+  architectFallback: { provider: "anthropic", model: "claude-opus-4-8" },
+  manager: { provider: "anthropic", model: "claude-sonnet-5" },
+  worker: { provider: "anthropic", model: "claude-haiku-4-5" },
+  // Gemini/Perplexity ID меняются быстро — сверить актуальный ID перед включением.
+  crosscheck: { provider: "google", model: "gemini-3-pro-preview" },
+  workerOverflow: { provider: "google", model: "gemini-2.5-flash" },
+  researcher: { provider: "perplexity", model: "sonar-pro" },
+  deepResearcher: { provider: "perplexity", model: "sonar-deep-research" },
+} as const satisfies Record<string, { provider: Provider; model: string }>;
 
 /** Типы узлов, требующие максимального интеллекта и вкуса. */
 const ARCHITECT_TYPE_PATTERNS = [
@@ -84,35 +111,49 @@ export function resolveTierForNodeType(nodeType: string): AgentTier {
   return "manager";
 }
 
+/**
+ * Маршруты на типы узлов пока покрывают только три Anthropic-яруса.
+ * crosscheck/researcher — не типы узлов, а самостоятельные роли; их
+ * подключение к паттернам узлов — Этап 2/3 плана, здесь не трогаем.
+ */
 export function resolveRouteForNodeType(nodeType: string): ModelRoute {
   const tier = resolveTierForNodeType(nodeType);
   switch (tier) {
     case "architect":
       return {
         tier,
-        model: MODELS.architect,
+        provider: MODELS.architect.provider,
+        model: MODELS.architect.model,
         maxTokens: 32000,
-        effort: "high", // xhigh/max — только точечно; high — рабочий максимум по умолчанию
-        sendAdaptiveThinking: false, // Fable 5: thinking всегда включён, параметр не передаём
-        useRefusalFallback: true,
+        anthropic: {
+          effort: "high", // xhigh/max — только точечно; high — рабочий максимум по умолчанию
+          sendAdaptiveThinking: false, // Fable 5: thinking всегда включён, параметр не передаём
+          useRefusalFallback: true,
+        },
       };
     case "manager":
       return {
         tier,
-        model: MODELS.manager,
+        provider: MODELS.manager.provider,
+        model: MODELS.manager.model,
         maxTokens: 16000,
-        effort: "medium", // ≈ Sonnet 4.6 на high, но дешевле — базовый уровень для рутины
-        sendAdaptiveThinking: true,
-        useRefusalFallback: false,
+        anthropic: {
+          effort: "medium", // ≈ Sonnet 4.6 на high, но дешевле — базовый уровень для рутины
+          sendAdaptiveThinking: true,
+          useRefusalFallback: false,
+        },
       };
     case "worker":
       return {
         tier,
-        model: MODELS.worker,
+        provider: MODELS.worker.provider,
+        model: MODELS.worker.model,
         maxTokens: 8192,
-        effort: undefined, // Haiku 4.5 не принимает effort — не отправляем
-        sendAdaptiveThinking: false,
-        useRefusalFallback: false,
+        anthropic: {
+          effort: undefined, // Haiku 4.5 не принимает effort — не отправляем
+          sendAdaptiveThinking: false,
+          useRefusalFallback: false,
+        },
       };
   }
 }
