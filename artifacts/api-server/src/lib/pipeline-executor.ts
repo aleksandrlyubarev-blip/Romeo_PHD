@@ -80,6 +80,20 @@ async function callModelWithRoute(
   return { text: textBlock?.type === "text" ? textBlock.text : null, model: servedBy };
 }
 
+/** Заглушки, которыми модель иногда подменяет реальный негативный ответ. */
+const STUB_OUTPUTS = new Set(["n/a", "na", "none", "null", "-"]);
+
+/**
+ * Обязательное правило негативного ответа (MANDATORY_NEGATIVE_RESULT_RULE)
+ * живёт только в промпте — модель может его проигнорировать. Проверяем
+ * тот же инвариант на сервере: пустой или заглушечный output не принимается
+ * как RESOLVED, что бы ни сказала модель про свою уверенность.
+ */
+function isBlankOrStubOutput(output: string): boolean {
+  const trimmed = output.trim();
+  return trimmed.length === 0 || STUB_OUTPUTS.has(trimmed.toLowerCase());
+}
+
 async function executeNodeWithLLM(
   nodeName: string,
   nodeType: string,
@@ -157,8 +171,26 @@ Process this pipeline node and return your result as JSON.`;
       status = "NEEDS_CLARIFICATION";
     }
 
+    const output = String(parsed.output ?? content.text);
+
+    // Серверный энфорсмент MANDATORY_NEGATIVE_RESULT_RULE: модель не должна
+    // отделываться пустым/заглушечным output, даже если сама проставила
+    // status: RESOLVED и высокую уверенность — иначе правило работает только
+    // "на честном слове" модели.
+    if (status === "RESOLVED" && isBlankOrStubOutput(output)) {
+      return {
+        output,
+        confidenceScore: 0,
+        status: "NEEDS_CLARIFICATION",
+        consultationMessage:
+          "Модель вернула пустой или заглушечный output ('N/A'/'none'/'-') вопреки " +
+          "обязательному правилу негативного ответа; требуется явный результат от оператора.",
+        ...routeMeta,
+      };
+    }
+
     return {
-      output: String(parsed.output ?? content.text),
+      output,
       confidenceScore: confidence,
       status,
       consultationMessage:

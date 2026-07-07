@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   db,
   pipelines,
@@ -228,22 +228,25 @@ router.post("/pipelines/:id/resume", async (req, res): Promise<void> => {
     return;
   }
 
+  // Гранулярность по узлам: если nodeId передан — апдейт затрагивает только
+  // этот узел, а не весь пайплайн. Пустая строка трактуется как "не передан"
+  // для обратной совместимости со старым поведением (весь пайплайн).
+  const nodeFilter = body.data.nodeId
+    ? and(eq(pipelineNodes.pipelineId, params.data.id), eq(pipelineNodes.nodeId, body.data.nodeId))
+    : eq(pipelineNodes.pipelineId, params.data.id);
+
   // Find the node and update it based on decision
   const [node] = await db
     .select()
     .from(pipelineNodes)
-    .where(
-      eq(pipelineNodes.pipelineId, params.data.id),
-    );
+    .where(nodeFilter);
 
   if (body.data.decision === "approve") {
     // Mark the node as RESOLVED and update the consultation
     await db
       .update(pipelineNodes)
       .set({ status: "RESOLVED", output: body.data.feedback ?? "Approved by operator" })
-      .where(
-        eq(pipelineNodes.pipelineId, params.data.id)
-      );
+      .where(nodeFilter);
 
     await db
       .update(pipelines)
@@ -253,7 +256,7 @@ router.post("/pipelines/:id/resume", async (req, res): Promise<void> => {
     await db
       .update(pipelineNodes)
       .set({ status: "NEEDS_CLARIFICATION" })
-      .where(eq(pipelineNodes.pipelineId, params.data.id));
+      .where(nodeFilter);
 
     await db
       .update(pipelines)
@@ -346,7 +349,8 @@ router.post("/consultations/:approvalId/respond", async (req, res): Promise<void
     .where(eq(consultations.approvalId, params.data.approvalId))
     .returning();
 
-  // Update the node status accordingly
+  // Update the node status accordingly — только тот узел, к которому относится
+  // консультация, а не весь пайплайн.
   const nodeStatus = body.data.decision === "approve" ? "RESOLVED" : "NEEDS_CLARIFICATION";
   await db
     .update(pipelineNodes)
@@ -356,7 +360,10 @@ router.post("/consultations/:approvalId/respond", async (req, res): Promise<void
       executedAt: new Date(),
     })
     .where(
-      eq(pipelineNodes.pipelineId, consultation.pipelineId),
+      and(
+        eq(pipelineNodes.pipelineId, consultation.pipelineId),
+        eq(pipelineNodes.nodeId, consultation.nodeId),
+      ),
     );
 
   // If approved, update pipeline resolved count
