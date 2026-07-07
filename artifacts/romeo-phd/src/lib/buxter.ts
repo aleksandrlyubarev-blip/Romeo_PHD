@@ -197,23 +197,35 @@ nodes:
     depends_on: [problem_intake]
     prompt: "Проведи аудит теоретической базы задачи: кинетическое уравнение RWDM, дипольные скорости w_ij ~ (1-3cos^2 theta)^2 / r^6, асимметрия каналов xi=3, концентрационное разложение, формулы (9)-(12) работы ЯФ-2014. Зафиксируй применимые формулы, нормировки и конвенции префакторов."
 
+  - id: crosscheck_theory
+    name: Кросс-проверка теории
+    type: crosscheck_theory
+    depends_on: [theory_audit]
+    prompt: "Независимо выведи и проверь ключевые формулы RWDM из вывода theory_audit: секулярный дипольный гамильтониан, дипольные скорости w_ij ~ b_ij^2 * g(domega), характерные шкалы времени tau. Явно перечисли согласия и расхождения с theory_audit — расхождения являются сигналом для validation_gate."
+
+  - id: research_literature
+    name: Обзор литературы
+    type: research_rwdm_literature
+    depends_on: [crosscheck_theory]
+    prompt: "Найди свежие публикации по спин-диффузии, RWDM и квантовым бенчмаркам на решётках (arXiv, рецензируемые журналы), верни список с выводом о новизне предлагаемого подхода. Если релевантных публикаций нет — дай явный негативный ответ."
+
   - id: model_design
     name: Дизайн RWDM-модели
     type: physics_model_design
-    depends_on: [theory_audit]
+    depends_on: [research_literature]
     prompt: "Спроектируй численную модель: ГЦК-подрешётка Li с PBC, генератор A с нулевыми суммами столбцов, каналы 8Li-6Li и 6Li-6Li, локальные дипольные поля, функция согласования частот g(domega). Укажи параметры из статьи для заданных c и H0."
 
-  - id: simulation_plan
-    name: План вычислений
-    type: physics_simulation
+  - id: run_qbench
+    name: Запуск quantum benchmark
+    type: tool_python_run_qbench
     depends_on: [model_design]
-    prompt: "Составь вычислительный план: суперячейка + теорема Блоха (алгоритм Джепарова-Львова-Шестопала), размер ячейки, cutoff-радиусы, число конфигураций, сетка времени, GPU-батчинг. Определи критерии сходимости по N_d и числу конфигураций."
+    prompt: "quantum-benchmark/rwdm_qbench_prototype.py"
 
   - id: validation_gate
     name: Валидация против 9 кейсов
     type: physics_validation
-    depends_on: [simulation_plan]
-    prompt: "Проверь результаты против P00(t) = F(t)*G(beta0*t) с табличными параметрами для девяти кейсов c x H0 из работы ЯФ-2014. Проанализируй известное расхождение 2005 г. в максимуме G(t) при c=0.1006, H0=200 Гс. Отдели физику от численных артефактов."
+    depends_on: [run_qbench]
+    prompt: "Сверь числа из output run_qbench (summary.json) с критериями §5 дизайн-документа quantum-benchmark-rwdm-lif.md: парный бенчмарк CTRW/CTQW, регулярный предел (согласие многочастичной динамики с master equation), epsilon(N,tau) <= 0.05. Учти расхождения, отмеченные на шаге crosscheck_theory. При любом расхождении с критериями или с crosscheck_theory — статус NEEDS_CLARIFICATION и явный запрос консультации человека."
 
   - id: research_report
     name: Отчёт научному руководителю

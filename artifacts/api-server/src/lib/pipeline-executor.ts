@@ -1,5 +1,9 @@
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import path from "path";
+import { fileURLToPath } from "url";
+import { spawn } from "child_process";
+import { readFile } from "fs/promises";
 import { db, pipelines, pipelineNodes, consultations, telemetryEvents } from "@workspace/db";
 import { resolvePersonaForNodeType } from "./agent-personas";
 import {
@@ -9,6 +13,25 @@ import {
   type ModelRoute,
 } from "./model-routing";
 import { getClientForProvider } from "./llm-clients";
+
+// Корень репозитория считаем от расположения этого файла, а не от
+// process.cwd(): api-server запускается через `tsx ./src/index.ts` из
+// пакета artifacts/api-server (см. package.json dev-скрипт), так что cwd
+// плавает в зависимости от того, откуда стартует процесс. ESM здесь, поэтому
+// __dirname нет — берём его из import.meta.url (тот же приём, что и в build.ts).
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// .../artifacts/api-server/src/lib -> repo root: 4 уровня вверх.
+const REPO_ROOT = path.resolve(__dirname, "../../../..");
+const RESEARCH_ROOT = path.resolve(REPO_ROOT, "research");
+
+const PYTHON_TOOL_TIMEOUT_MS = 15 * 60_000;
+const OUTPUT_CHAR_LIMIT = 20_000;
+
+/** Обрезает строку до лимита и явно помечает обрезку — иначе хвост незаметно теряется в output узла. */
+function truncateOutput(text: string, limit = OUTPUT_CHAR_LIMIT): string {
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit)}\n...[обрезано, ${text.length - limit} символов отброшено]`;
+}
 
 async function logTelemetry(
   pipelineId: number,
@@ -186,6 +209,131 @@ Process this pipeline node and return your result as JSON.`;
   }
 }
 
+/** Префикс типа узла, исполняемого как Python-скрипт, а не через LLM. */
+const TOOL_PYTHON_PREFIX = "tool_python_";
+
+interface SpawnPythonResult {
+  exitCode: number | null;
+  timedOut: boolean;
+  stdout: string;
+  stderr: string;
+}
+
+/** Промис-обёртка над child_process.spawn с жёстким таймаутом на выполнение скрипта. */
+function spawnPythonScript(scriptPath: string, cwd: string): Promise<SpawnPythonResult> {
+  return new Promise((resolve) => {
+    const child = spawn("python3", [scriptPath], { cwd, timeout: PYTHON_TOOL_TIMEOUT_MS });
+
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    // `timeout` в опциях spawn шлёт SIGTERM сам, но нам нужно явно отметить
+    // причину для NodeResult — ловим её по коду сигнала завершения.
+    child.on("close", (code, signal) => {
+      if (signal === "SIGTERM") timedOut = true;
+      resolve({ exitCode: code, timedOut, stdout, stderr });
+    });
+
+    child.on("error", (err) => {
+      stderr += `\n[spawn error]: ${err.message}`;
+      resolve({ exitCode: null, timedOut: false, stdout, stderr });
+    });
+  });
+}
+
+/**
+ * Tool-узел: исполняет Python-скрипт из `research/` вместо обращения к LLM.
+ * `prompt` узла — относительный путь к скрипту ВНУТРИ research/ (например
+ * "quantum-benchmark/rwdm_qbench_prototype.py"). Санитизация обязательна:
+ * узел не должен уметь выйти за пределы research/ через "..", абсолютный
+ * путь или симлинк-подобные трюки — resolve + startsWith-проверка ловит и то,
+ * и другое для практических целей пайплайна (не sandbox, но не даёт узлу
+ * тронуть произвольный файл на диске).
+ */
+async function executePythonToolNode(
+  nodeName: string,
+  nodeType: string,
+  prompt: string | null
+): Promise<NodeResult> {
+  const routeMeta = { model: "tool:python3", provider: "tool", tier: "worker" };
+
+  if (!prompt || prompt.trim().length === 0) {
+    return {
+      output: `Узел "${nodeName}" (${nodeType}) не задал путь к скрипту в prompt.`,
+      confidenceScore: 0,
+      status: "NEEDS_CLARIFICATION",
+      consultationMessage: "tool_python_-узел без пути к скрипту; требуется правка пресета оператором.",
+      durationMs: 0,
+      ...routeMeta,
+    };
+  }
+
+  const scriptPath = path.resolve(RESEARCH_ROOT, prompt.trim());
+
+  if (!scriptPath.startsWith(RESEARCH_ROOT + path.sep)) {
+    return {
+      output: `Запрещённый путь к скрипту: "${prompt}" выходит за пределы research/.`,
+      confidenceScore: 0,
+      status: "NEEDS_CLARIFICATION",
+      consultationMessage:
+        `tool_python_-узел "${nodeName}" запросил путь вне research/ ("${prompt}"); ` +
+        "исполнение заблокировано до правки оператором.",
+      durationMs: 0,
+      ...routeMeta,
+    };
+  }
+
+  const startedAt = Date.now();
+  const result = await spawnPythonScript(scriptPath, path.dirname(scriptPath));
+  const durationMs = Date.now() - startedAt;
+
+  const stdout = truncateOutput(result.stdout);
+  const stderr = truncateOutput(result.stderr);
+
+  if (result.timedOut || result.exitCode !== 0) {
+    const reason = result.timedOut
+      ? `таймаут (> ${PYTHON_TOOL_TIMEOUT_MS / 60_000} мин)`
+      : `exit code ${result.exitCode}`;
+    return {
+      output: `Скрипт "${prompt}" завершился с ошибкой: ${reason}.\n\nstderr (хвост):\n${stderr}`,
+      confidenceScore: 0,
+      status: "NEEDS_CLARIFICATION",
+      consultationMessage: `Python-скрипт "${prompt}" упал (${reason}); требуется разбор оператором.`,
+      durationMs,
+      ...routeMeta,
+    };
+  }
+
+  // results/summary.json — главный артефакт для последующих узлов пайплайна
+  // (например, validation_gate сверяет по нему числа с критериями дизайн-дока).
+  let summarySection = "summary.json: отсутствует (скрипт не создал results/summary.json).";
+  try {
+    const summaryPath = path.join(path.dirname(scriptPath), "results", "summary.json");
+    const summaryRaw = await readFile(summaryPath, "utf-8");
+    summarySection = `summary.json:\n${summaryRaw}`;
+  } catch {
+    // Нет summary.json — не ошибка исполнения, просто нечего приложить.
+  }
+
+  const output = `Скрипт "${prompt}" выполнен успешно (exit code 0, ${(durationMs / 1000).toFixed(1)} с).\n\n${summarySection}\n\nstdout (хвост):\n${stdout}`;
+
+  return {
+    output,
+    confidenceScore: 1.0,
+    status: "RESOLVED",
+    durationMs,
+    ...routeMeta,
+  };
+}
+
 export async function executePipeline(
   pipelineId: number,
   onEvent: (event: string, data: Record<string, unknown>) => void
@@ -243,12 +391,9 @@ export async function executePipeline(
     onEvent("node_status_changed", { nodeId: node.nodeId, status: "PENDING" });
 
     try {
-      const result = await executeNodeWithLLM(
-        node.name,
-        node.type,
-        node.prompt,
-        previousOutputs
-      );
+      const result = node.type.startsWith(TOOL_PYTHON_PREFIX)
+        ? await executePythonToolNode(node.name, node.type, node.prompt)
+        : await executeNodeWithLLM(node.name, node.type, node.prompt, previousOutputs);
 
       // Save result
       await db

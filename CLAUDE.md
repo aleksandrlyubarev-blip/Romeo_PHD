@@ -16,6 +16,19 @@
 При сомнении — ярус выше, никогда не ниже. Реализация:
 `artifacts/api-server/src/lib/model-routing.ts`.
 
+## Кросс-провайдерные роли
+
+| Роль          | Провайдер  | Env-ключ                                | Типы узлов |
+|---------------|------------|------------------------------------------|------------|
+| crosscheck    | google     | `AI_INTEGRATIONS_GEMINI_API_KEY`         | `crosscheck_*`, `second_opinion` |
+| researcher    | perplexity | `AI_INTEGRATIONS_PERPLEXITY_API_KEY`     | `research_*` (кроме `*_report`), `literature`, `arxiv` |
+| workerOverflow| google     | `WORKER_OVERFLOW_PROVIDER=google`        | перелив worker-яруса при rate-limit Anthropic |
+
+Узлы `tool_python_*` — отдельный путь диспетчеризации в `pipeline-executor.ts`:
+не LLM, а исполнение Python-скрипта. `prompt` узла — относительный путь ВНУТРИ
+`research/` (выход за пределы через `..`/абсолютный путь запрещён и не
+исполняется); таймаут исполнения — 15 минут.
+
 ## Reasoning effort — не выкручивать на максимум
 
 Effort применяется к каждому токену, а не к задаче в целом. Максимальный
