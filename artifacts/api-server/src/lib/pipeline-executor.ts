@@ -3,6 +3,13 @@ import { randomUUID } from "crypto";
 import { db, pipelines, pipelineNodes, consultations, telemetryEvents } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { resolvePersonaForNodeType } from "./agent-personas";
+import {
+  MODELS,
+  MANDATORY_NEGATIVE_RESULT_RULE,
+  WORKER_TIER_RULES,
+  resolveRouteForNodeType,
+  type ModelRoute,
+} from "./model-routing";
 
 async function logTelemetry(
   pipelineId: number,
@@ -23,6 +30,54 @@ interface NodeResult {
   confidenceScore: number;
   status: "RESOLVED" | "NEEDS_CLARIFICATION" | "AMBIGUOUS";
   consultationMessage?: string;
+  /** Модель, фактически давшая ответ (с учётом refusal-fallback). */
+  model: string;
+  /** Ярус маршрутизации: architect | manager | worker. */
+  tier: string;
+  /** Время работы ИИ над узлом — главный сканер качества архитектуры. */
+  durationMs: number;
+}
+
+/**
+ * Один вызов модели по маршруту. Для architect-яруса (Fable 5) при
+ * policy-отказе классификаторов (stop_reason: "refusal") запрос
+ * повторяется на Opus 4.8 — иначе ложное срабатывание на безобидной
+ * смежной теме валит весь пайплайн.
+ */
+async function callModelWithRoute(
+  route: ModelRoute,
+  systemPrompt: string,
+  userMessage: string
+): Promise<{ text: string | null; model: string }> {
+  const request = (model: string) =>
+    anthropic.messages.create({
+      model,
+      max_tokens: route.maxTokens,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userMessage }],
+      // Fable 5: thinking всегда включён, параметр не передаётся вовсе.
+      // Haiku 4.5: adaptive thinking недоступен.
+      ...(route.sendAdaptiveThinking ? { thinking: { type: "adaptive" as const } } : {}),
+      // Haiku 4.5 не принимает effort — отправляем только там, где поддержано.
+      ...(route.effort ? { output_config: { effort: route.effort } } : {}),
+    });
+
+  let message = await request(route.model);
+  let servedBy = route.model;
+
+  if (message.stop_reason === "refusal" && route.useRefusalFallback) {
+    message = await request(MODELS.architectFallback);
+    servedBy = MODELS.architectFallback;
+  }
+
+  if (message.stop_reason === "refusal") {
+    return { text: null, model: servedBy };
+  }
+
+  // При включённом thinking первый блок может быть thinking-блоком —
+  // ищем текстовый блок, а не берём content[0].
+  const textBlock = message.content.find((b) => b.type === "text");
+  return { text: textBlock?.type === "text" ? textBlock.text : null, model: servedBy };
 }
 
 async function executeNodeWithLLM(
@@ -39,6 +94,7 @@ async function executeNodeWithLLM(
       : "";
 
   const persona = resolvePersonaForNodeType(nodeType);
+  const route = resolveRouteForNodeType(nodeType);
 
   const systemPrompt = `You are an AI worker in a pipeline execution system called Romeo PHD v6.0.
 You process pipeline nodes deterministically. For each node, you:
@@ -56,29 +112,31 @@ Your response MUST be a valid JSON object with these fields:
 Status rules:
 - RESOLVED (confidence >= 0.8): Task completed with high confidence
 - AMBIGUOUS (0.6 <= confidence < 0.8): Multiple valid interpretations, needs human review
-- NEEDS_CLARIFICATION (confidence < 0.6): Insufficient information, requires operator input${persona ? `\n\n${persona}` : ""}`;
+- NEEDS_CLARIFICATION (confidence < 0.6): Insufficient information, requires operator input
+
+${MANDATORY_NEGATIVE_RESULT_RULE}${route.tier === "worker" ? `\n\n${WORKER_TIER_RULES}` : ""}${persona ? `\n\n${persona}` : ""}`;
 
   const userMessage = `Node: "${nodeName}" (type: ${nodeType})
 Task: ${prompt ?? `Execute the ${nodeType} task for node: ${nodeName}`}${contextStr}
 
 Process this pipeline node and return your result as JSON.`;
 
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 8192,
-    system: systemPrompt,
-    messages: [{ role: "user", content: userMessage }],
-  });
+  const startedAt = Date.now();
+  const { text, model } = await callModelWithRoute(route, systemPrompt, userMessage);
+  const durationMs = Date.now() - startedAt;
+  const routeMeta = { model, tier: route.tier, durationMs };
 
-  const content = message.content[0];
-  if (content.type !== "text") {
+  if (text === null) {
     return {
-      output: "Node execution produced no text output",
-      confidenceScore: 0.5,
-      status: "AMBIGUOUS",
-      consultationMessage: "LLM returned non-text content",
+      output: "Node execution was refused by safety classifiers (including fallback model)",
+      confidenceScore: 0,
+      status: "NEEDS_CLARIFICATION",
+      consultationMessage: "LLM request refused; operator review required",
+      ...routeMeta,
     };
   }
+
+  const content = { type: "text" as const, text };
 
   try {
     // Extract JSON from response (may be wrapped in markdown)
@@ -107,6 +165,7 @@ Process this pipeline node and return your result as JSON.`;
         status !== "RESOLVED"
           ? `Confidence score: ${confidence.toFixed(2)}. ${parsed.reasoning ?? ""}`
           : undefined,
+      ...routeMeta,
     };
   } catch {
     // If JSON parsing fails, use the raw text with moderate confidence
@@ -115,6 +174,7 @@ Process this pipeline node and return your result as JSON.`;
       confidenceScore: 0.7,
       status: "AMBIGUOUS",
       consultationMessage: "Could not parse structured response; using raw output",
+      ...routeMeta,
     };
   }
 }
@@ -199,11 +259,19 @@ export async function executePipeline(
         status: result.status,
         output: result.output,
         confidenceScore: result.confidenceScore,
+        model: result.model,
+        tier: result.tier,
+        durationMs: result.durationMs,
       });
 
       await logTelemetry(pipelineId, node.nodeId, "node_executed", {
         status: result.status,
         confidenceScore: result.confidenceScore,
+        model: result.model,
+        tier: result.tier,
+        // Время работы ИИ — сканер качества архитектуры: минуты — норма,
+        // десятки минут на простом узле — красный флаг запутанного кода.
+        durationMs: result.durationMs,
       });
 
       if (result.status === "RESOLVED") {
