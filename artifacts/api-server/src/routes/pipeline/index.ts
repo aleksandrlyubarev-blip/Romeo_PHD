@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   db,
   pipelines,
@@ -233,8 +233,16 @@ router.post("/pipelines/:id/resume", async (req, res): Promise<void> => {
     .select()
     .from(pipelineNodes)
     .where(
-      eq(pipelineNodes.pipelineId, params.data.id),
+      and(
+        eq(pipelineNodes.pipelineId, params.data.id),
+        eq(pipelineNodes.nodeId, body.data.nodeId),
+      ),
     );
+
+  if (!node) {
+    res.status(404).json({ error: "Pipeline node not found" });
+    return;
+  }
 
   if (body.data.decision === "approve") {
     // Mark the node as RESOLVED and update the consultation
@@ -242,7 +250,10 @@ router.post("/pipelines/:id/resume", async (req, res): Promise<void> => {
       .update(pipelineNodes)
       .set({ status: "RESOLVED", output: body.data.feedback ?? "Approved by operator" })
       .where(
-        eq(pipelineNodes.pipelineId, params.data.id)
+        and(
+          eq(pipelineNodes.pipelineId, params.data.id),
+          eq(pipelineNodes.nodeId, body.data.nodeId),
+        )
       );
 
     await db
@@ -253,7 +264,12 @@ router.post("/pipelines/:id/resume", async (req, res): Promise<void> => {
     await db
       .update(pipelineNodes)
       .set({ status: "NEEDS_CLARIFICATION" })
-      .where(eq(pipelineNodes.pipelineId, params.data.id));
+      .where(
+        and(
+          eq(pipelineNodes.pipelineId, params.data.id),
+          eq(pipelineNodes.nodeId, body.data.nodeId),
+        )
+      );
 
     await db
       .update(pipelines)
@@ -356,7 +372,10 @@ router.post("/consultations/:approvalId/respond", async (req, res): Promise<void
       executedAt: new Date(),
     })
     .where(
-      eq(pipelineNodes.pipelineId, consultation.pipelineId),
+      and(
+        eq(pipelineNodes.pipelineId, consultation.pipelineId),
+        eq(pipelineNodes.nodeId, consultation.nodeId),
+      ),
     );
 
   // If approved, update pipeline resolved count

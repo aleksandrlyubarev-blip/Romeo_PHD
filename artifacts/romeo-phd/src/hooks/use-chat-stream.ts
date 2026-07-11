@@ -83,12 +83,13 @@ export function useChatStream(conversationId: number | null) {
                 break;
               }
               if (data.content) {
+                const chunk = data.content;
                 setOptimisticMessages((prev) => {
-                  const newMsgs = [...prev];
-                  const last = newMsgs[newMsgs.length - 1];
-                  if (last && last.role === "assistant") {
-                    last.content += data.content;
-                  }
+                  if (prev.length === 0) return prev;
+                  const last = prev[prev.length - 1];
+                  if (!last || last.role !== "assistant") return prev;
+                  const newMsgs = prev.slice(0, -1);
+                  newMsgs.push({ ...last, content: last.content + chunk });
                   return newMsgs;
                 });
               }
