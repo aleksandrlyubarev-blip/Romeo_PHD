@@ -1,0 +1,34 @@
+# Подготовка данных использует только стандартную библиотеку Python 3.11+.
+# Зависимости ниже нужны для обучения Sa2VA-InternVL3-14B и оценки.
+# Версии не пиннятся жёстко здесь — реальный pin делается в Dockerfile / lockfile перед запуском в GCP.
+
+# --- training (Sa2VA / XTuner stack) ---
+torch>=2.3
+torchvision
+transformers>=4.44
+accelerate>=0.33
+peft>=0.12
+bitsandbytes>=0.43          # QLoRA 4-bit
+xtuner>=0.1.23              # тренировочный фреймворк Sa2VA
+deepspeed>=0.14             # ZeRO-2/3 для multi-GPU
+flash-attn>=2.5             # опционально, ускоряет attention
+einops
+timm
+sentencepiece
+pillow                      # обработка изображений в обучении/оценке (для подготовки данных не требуется)
+
+# --- segmentation head (SAM2 внутри Sa2VA) ---
+# sam2 ставится из исходников ByteDance/Sa2VA при сборке контейнера
+
+# --- eval ---
+pycocotools>=2.0.7
+numpy
+shapely                     # IoU полигонов
+scipy                       # венгерский матчинг компонентов
+
+# --- experiment tracking (опционально) ---
+wandb
+
+# --- GCP ---
+google-cloud-aiplatform>=1.60
+google-cloud-storage
